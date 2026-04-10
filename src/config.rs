@@ -24,8 +24,8 @@ pub struct DatabaseConfig {
 pub struct AuthConfig {
     pub jwt_secret: String,
     pub jwt_expiration: u64,
-    pub rainbow_auth_url: Option<String>,  // Rainbow-Auth服务地址
-    pub integration_mode: bool,            // 是否集成Rainbow-Auth
+    pub rainbow_auth_url: Option<String>, // Rainbow-Auth服务地址
+    pub integration_mode: bool,           // 是否集成Rainbow-Auth
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

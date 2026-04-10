@@ -1,13 +1,17 @@
-use std::sync::Arc;
-use surrealdb::{types::RecordId as Thing, Surreal, engine::remote::ws::Client};
-use validator::Validate;
 use chrono::Utc;
+use std::sync::Arc;
+use surrealdb::{engine::remote::ws::Client, types::RecordId as Thing, Surreal};
+use validator::Validate;
 
 use crate::{
     error::ApiError,
-    models::document::{Document, CreateDocumentRequest, UpdateDocumentRequest, DocumentTreeNode, DocumentMetadata},
+    models::document::{
+        CreateDocumentRequest, Document, DocumentMetadata, DocumentTreeNode, UpdateDocumentRequest,
+    },
     models::version::{CreateVersionRequest, VersionChangeType},
-    services::{auth::AuthService, search::SearchService, versions::VersionService, database::Database},
+    services::{
+        auth::AuthService, database::Database, search::SearchService, versions::VersionService,
+    },
     utils::markdown::MarkdownProcessor,
 };
 
@@ -23,10 +27,7 @@ pub struct DocumentService {
 impl DocumentService {
     fn normalize_document_id(raw: &str) -> String {
         let trimmed = raw.trim();
-        let no_prefix = trimmed
-            .strip_prefix("document:")
-            .unwrap_or(trimmed)
-            .trim();
+        let no_prefix = trimmed.strip_prefix("document:").unwrap_or(trimmed).trim();
         no_prefix
             .trim_matches(|c| c == '⟨' || c == '⟩' || c == '"' || c == '\'' || c == '`' || c == ' ')
             .to_string()
@@ -79,8 +80,8 @@ impl DocumentService {
         query: crate::models::document::DocumentQuery,
         _user: Option<&crate::services::auth::User>,
     ) -> Result<serde_json::Value, ApiError> {
-        use crate::models::document::{DocumentQuery, DocumentListItem, DocumentListResponse};
-        
+        use crate::models::document::{DocumentListItem, DocumentListResponse, DocumentQuery};
+
         // 提取实际的空间ID（去掉"space:"前缀，如果存在）
         let actual_space_id = if space_id.starts_with("space:") {
             space_id.strip_prefix("space:").unwrap()
@@ -107,7 +108,7 @@ impl DocumentService {
             Self::document_select_fields()
         );
         let mut documents_query = self.db.client.query(base_query);
-        
+
         documents_query = documents_query
             .bind(("space_id", space_record.clone()))
             .bind(("limit", limit))
@@ -124,14 +125,18 @@ impl DocumentService {
                  LIMIT $limit START $offset",
                 Self::document_select_fields()
             );
-            documents_query = self.db.client.query(search_query)
-            .bind(("space_id", space_record.clone()))
-            .bind(("search", search))
-            .bind(("limit", limit))
-            .bind(("offset", offset));
+            documents_query = self
+                .db
+                .client
+                .query(search_query)
+                .bind(("space_id", space_record.clone()))
+                .bind(("search", search))
+                .bind(("limit", limit))
+                .bind(("offset", offset));
         }
 
-        let mut result = documents_query.await
+        let mut result = documents_query
+            .await
             .map_err(|e| ApiError::DatabaseError(e.to_string()))?;
 
         let documents_raw: Vec<Document> = result
@@ -139,10 +144,8 @@ impl DocumentService {
             .map_err(|e| ApiError::DatabaseError(e.to_string()))?;
 
         // 转换为DocumentListItem
-        let documents: Vec<DocumentListItem> = documents_raw.into_iter()
-            .map(|doc| doc.into())
-            .collect();
-
+        let documents: Vec<DocumentListItem> =
+            documents_raw.into_iter().map(|doc| doc.into()).collect();
 
         // 暂时使用简单的总数计算 - 由于分页问题，暂时查询所有文档获取总数
         let all_query = format!(
@@ -151,11 +154,14 @@ impl DocumentService {
              AND is_deleted = false",
             Self::document_select_fields()
         );
-        let all_docs_query = self.db.client
+        let all_docs_query = self
+            .db
+            .client
             .query(all_query)
             .bind(("space_id", space_record.clone()));
 
-        let mut all_docs_result = all_docs_query.await
+        let mut all_docs_result = all_docs_query
+            .await
             .map_err(|e| ApiError::DatabaseError(e.to_string()))?;
 
         let all_docs: Vec<Document> = all_docs_result
@@ -188,7 +194,9 @@ impl DocumentService {
 
         // 检查slug在空间内是否唯一
         if self.document_slug_exists(space_id, &request.slug).await? {
-            return Err(ApiError::Conflict("Document slug already exists in this space".to_string()));
+            return Err(ApiError::Conflict(
+                "Document slug already exists in this space".to_string(),
+            ));
         }
 
         // 提取space_id的实际ID部分（去掉"space:"前缀）
@@ -200,7 +208,8 @@ impl DocumentService {
 
         // 验证父文档存在性（使用清理后的space_id）
         if let Some(parent_id) = &request.parent_id {
-            self.verify_parent_document(actual_space_id, parent_id).await?;
+            self.verify_parent_document(actual_space_id, parent_id)
+                .await?;
         }
 
         // 处理Markdown内容
@@ -252,40 +261,42 @@ impl DocumentService {
             .bind(("reading_time", processed.reading_time))
             .bind(("is_public", request.is_public.unwrap_or(false)))
             .bind(("order_index", request.order_index.unwrap_or(0)));
-            
+
         if let Some(parent_id) = &request.parent_id {
             let actual_parent_id = parent_id
                 .strip_prefix("document:")
                 .unwrap_or(parent_id)
                 .trim_matches(|c| c == '⟨' || c == '⟩');
-            query_builder = query_builder.bind(("parent_id", format!("document:{}", actual_parent_id)));
+            query_builder =
+                query_builder.bind(("parent_id", format!("document:{}", actual_parent_id)));
         }
-        
+
         let mut result = query_builder
             .await
             .map_err(Self::map_document_write_error)?;
-            
+
         let created: Vec<Document> = result
             .take(0)
             .map_err(|e| ApiError::DatabaseError(e.to_string()))?;
 
-        let created_document = created
-            .into_iter()
-            .next()
-            .ok_or_else(|| ApiError::InternalServerError("Failed to create document".to_string()))?;
+        let created_document = created.into_iter().next().ok_or_else(|| {
+            ApiError::InternalServerError("Failed to create document".to_string())
+        })?;
 
         // 更新搜索索引
         if let Some(search_service) = &self.search_service {
-            let _ = search_service.update_document_index(
-                &created_document.id.as_ref().unwrap().to_string(),
-                space_id,
-                &created_document.title,
-                &created_document.content,
-                &created_document.excerpt.clone().unwrap_or_default(),
-                Vec::new(), // 标签将在后续更新
-                author_id,
-                created_document.is_public,
-            ).await;
+            let _ = search_service
+                .update_document_index(
+                    &created_document.id.as_ref().unwrap().to_string(),
+                    space_id,
+                    &created_document.title,
+                    &created_document.content,
+                    &created_document.excerpt.clone().unwrap_or_default(),
+                    Vec::new(), // 标签将在后续更新
+                    author_id,
+                    created_document.is_public,
+                )
+                .await;
         }
 
         // 创建初始版本
@@ -296,12 +307,14 @@ impl DocumentService {
                 summary: Some("Initial version".to_string()),
                 change_type: VersionChangeType::Created,
             };
-            
-            let _ = version_service.create_version(
-                &created_document.id.as_ref().unwrap().to_string(),
-                author_id,
-                version_request,
-            ).await;
+
+            let _ = version_service
+                .create_version(
+                    &created_document.id.as_ref().unwrap().to_string(),
+                    author_id,
+                    version_request,
+                )
+                .await;
         }
 
         Ok(created_document)
@@ -393,16 +406,18 @@ impl DocumentService {
 
         // 更新搜索索引
         if let Some(search_service) = &self.search_service {
-            let _ = search_service.update_document_index(
-                document_id,
-                &updated_document.space_id.to_string(),
-                &updated_document.title,
-                &updated_document.content,
-                &updated_document.excerpt.clone().unwrap_or_default(),
-                Vec::new(), // 标签将在后续更新
-                &updated_document.author_id,
-                updated_document.is_public,
-            ).await;
+            let _ = search_service
+                .update_document_index(
+                    document_id,
+                    &updated_document.space_id.to_string(),
+                    &updated_document.title,
+                    &updated_document.content,
+                    &updated_document.excerpt.clone().unwrap_or_default(),
+                    Vec::new(), // 标签将在后续更新
+                    &updated_document.author_id,
+                    updated_document.is_public,
+                )
+                .await;
         }
 
         // 创建新版本
@@ -413,18 +428,20 @@ impl DocumentService {
                 summary: Some("Document updated".to_string()),
                 change_type: VersionChangeType::Updated,
             };
-            
-            let _ = version_service.create_version(
-                clean_id.as_str(),
-                editor_id,
-                version_request,
-            ).await;
+
+            let _ = version_service
+                .create_version(clean_id.as_str(), editor_id, version_request)
+                .await;
         }
 
         Ok(updated_document)
     }
 
-    pub async fn delete_document(&self, document_id: &str, deleter_id: &str) -> Result<(), ApiError> {
+    pub async fn delete_document(
+        &self,
+        document_id: &str,
+        deleter_id: &str,
+    ) -> Result<(), ApiError> {
         let clean_id = Self::normalize_document_id(document_id);
         // Soft-delete only specific fields; never write the whole record back,
         // otherwise datetime fields (e.g. created_at) may be coerced from strings.
@@ -438,7 +455,9 @@ impl DocumentService {
             WHERE is_deleted = false
         "#;
 
-        let mut result = self.db.client
+        let mut result = self
+            .db
+            .client
             .query(update_sql)
             .bind(("record_id", format!("document:{}", clean_id)))
             .bind(("deleted_by", deleter_id.to_string()))
@@ -468,7 +487,7 @@ impl DocumentService {
         per_page: i64,
     ) -> Result<Vec<Document>, ApiError> {
         let offset = (page - 1) * per_page;
-        
+
         let query = format!(
             "SELECT {} FROM document
              WHERE space_id = type::record($space_id)
@@ -478,7 +497,9 @@ impl DocumentService {
             Self::document_select_fields()
         );
 
-        let documents: Vec<Document> = self.db.client
+        let documents: Vec<Document> = self
+            .db
+            .client
             .query(query)
             .bind(("space_id", format!("space:{}", space_id)))
             .bind(("limit", per_page))
@@ -491,10 +512,7 @@ impl DocumentService {
         Ok(documents)
     }
 
-    pub async fn get_document_children(
-        &self,
-        parent_id: &str,
-    ) -> Result<Vec<Document>, ApiError> {
+    pub async fn get_document_children(&self, parent_id: &str) -> Result<Vec<Document>, ApiError> {
         let query = format!(
             "SELECT {} FROM document
              WHERE parent_id = type::record($parent_id)
@@ -503,7 +521,9 @@ impl DocumentService {
             Self::document_select_fields()
         );
 
-        let children: Vec<Document> = self.db.client
+        let children: Vec<Document> = self
+            .db
+            .client
             .query(query)
             .bind(("parent_id", format!("document:{}", parent_id)))
             .await
@@ -522,16 +542,19 @@ impl DocumentService {
         self.get_document_children(&actual_id).await
     }
 
-    pub async fn get_document_tree(&self, space_id: &str) -> Result<Vec<DocumentTreeNode>, ApiError> {
+    pub async fn get_document_tree(
+        &self,
+        space_id: &str,
+    ) -> Result<Vec<DocumentTreeNode>, ApiError> {
         tracing::debug!("Getting document tree for space_id: {}", space_id);
-        
+
         // 提取实际的空间ID（去掉"space:"前缀，如果存在）
         let actual_space_id = if space_id.starts_with("space:") {
             space_id.strip_prefix("space:").unwrap()
         } else {
             space_id
         };
-        
+
         // 获取空间内所有文档
         let query = format!(
             "SELECT {} FROM document
@@ -543,8 +566,10 @@ impl DocumentService {
 
         let space_record = format!("space:{}", actual_space_id);
         tracing::debug!("Querying with space_record: {}", space_record);
-        
-        let all_documents: Vec<Document> = self.db.client
+
+        let all_documents: Vec<Document> = self
+            .db
+            .client
             .query(query)
             .bind(("space_id", space_record))
             .await
@@ -558,7 +583,8 @@ impl DocumentService {
 
         // 构建文档映射
         let mut doc_map = std::collections::HashMap::new();
-        let mut children_map: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+        let mut children_map: std::collections::HashMap<String, Vec<String>> =
+            std::collections::HashMap::new();
         let mut root_docs = Vec::new();
 
         // 第一次遍历：创建所有节点并识别父子关系
@@ -572,11 +598,12 @@ impl DocumentService {
                     order_index: doc.order_index,
                     children: Vec::new(),
                 };
-                
+
                 doc_map.insert(doc_id.clone(), node);
-                
+
                 if let Some(parent_id) = &doc.parent_id {
-                    children_map.entry(parent_id.clone())
+                    children_map
+                        .entry(parent_id.clone())
                         .or_insert_with(Vec::new)
                         .push(doc_id.clone());
                 } else {
@@ -595,7 +622,9 @@ impl DocumentService {
                 // 递归构建子节点
                 if let Some(child_ids) = children_map.get(doc_id) {
                     for child_id in child_ids {
-                        if let Some(child_node) = build_tree_recursive(child_id, doc_map, children_map) {
+                        if let Some(child_node) =
+                            build_tree_recursive(child_id, doc_map, children_map)
+                        {
                             node.children.push(child_node);
                         }
                     }
@@ -615,7 +644,7 @@ impl DocumentService {
                 result.push(root_node);
             }
         }
-        
+
         // 按order_index排序根节点
         result.sort_by_key(|node| node.order_index);
 
@@ -633,7 +662,8 @@ impl DocumentService {
         let mut document = self.get_document(document_id).await?;
 
         if let Some(parent_id) = new_parent_id {
-            self.verify_parent_document(&document.space_id.to_string(), &parent_id).await?;
+            self.verify_parent_document(&document.space_id.to_string(), &parent_id)
+                .await?;
             document.parent_id = Some(parent_id);
         } else {
             document.parent_id = None;
@@ -646,7 +676,9 @@ impl DocumentService {
         document.updated_by = Some(mover_id.to_string());
         document.updated_at = Some(chrono::Utc::now());
 
-        let updated: Option<Document> = self.db.client
+        let updated: Option<Document> = self
+            .db
+            .client
             .update(("document", document_id))
             .content(document.clone())
             .await
@@ -655,7 +687,10 @@ impl DocumentService {
         updated.ok_or_else(|| ApiError::InternalServerError("Failed to move document".to_string()))
     }
 
-    pub async fn get_document_breadcrumbs(&self, document_id: &str) -> Result<Vec<Document>, ApiError> {
+    pub async fn get_document_breadcrumbs(
+        &self,
+        document_id: &str,
+    ) -> Result<Vec<Document>, ApiError> {
         let mut breadcrumbs = Vec::new();
         let mut current_id = Some(document_id.to_string());
 
@@ -669,16 +704,22 @@ impl DocumentService {
         Ok(breadcrumbs)
     }
 
-    pub async fn get_document_breadcrumbs_by_id(&self, document_id: &str) -> Result<Vec<Document>, ApiError> {
+    pub async fn get_document_breadcrumbs_by_id(
+        &self,
+        document_id: &str,
+    ) -> Result<Vec<Document>, ApiError> {
         let actual_id = Self::normalize_document_id(document_id);
-        
+
         let mut breadcrumbs = Vec::new();
         let mut current_id = Some(actual_id.to_string());
 
         while let Some(id) = current_id {
             let document = self.get_document_by_id(&id).await?;
             // 从parent_id中提取实际ID
-            current_id = document.parent_id.as_ref().map(|p| Self::normalize_document_id(p));
+            current_id = document
+                .parent_id
+                .as_ref()
+                .map(|p| Self::normalize_document_id(p));
             breadcrumbs.push(document);
         }
 
@@ -694,12 +735,15 @@ impl DocumentService {
         duplicator_id: &str,
     ) -> Result<Document, ApiError> {
         let original = self.get_document(document_id).await?;
-        
+
         let title = new_title.unwrap_or_else(|| format!("{} (Copy)", original.title));
         let slug = new_slug.unwrap_or_else(|| format!("{}-copy", original.slug));
 
         // 检查新slug是否唯一
-        if self.document_slug_exists(&original.space_id.to_string(), &slug).await? {
+        if self
+            .document_slug_exists(&original.space_id.to_string(), &slug)
+            .await?
+        {
             return Err(ApiError::Conflict("New slug already exists".to_string()));
         }
 
@@ -716,35 +760,42 @@ impl DocumentService {
         new_document.reading_time = original.reading_time;
         new_document.is_public = original.is_public;
 
-        let created: Vec<Document> = self.db.client
+        let created: Vec<Document> = self
+            .db
+            .client
             .create("document")
             .content(new_document)
             .await
             .map_err(|e| ApiError::DatabaseError(e.to_string()))?;
 
-        let created_document = created
-            .into_iter()
-            .next()
-            .ok_or_else(|| ApiError::InternalServerError("Failed to duplicate document".to_string()))?;
+        let created_document = created.into_iter().next().ok_or_else(|| {
+            ApiError::InternalServerError("Failed to duplicate document".to_string())
+        })?;
 
         // 更新搜索索引
         if let Some(search_service) = &self.search_service {
-            let _ = search_service.update_document_index(
-                &created_document.id.as_ref().unwrap().to_string(),
-                &created_document.space_id.to_string(),
-                &created_document.title,
-                &created_document.content,
-                &created_document.excerpt.clone().unwrap_or_default(),
-                Vec::new(),
-                duplicator_id,
-                created_document.is_public,
-            ).await;
+            let _ = search_service
+                .update_document_index(
+                    &created_document.id.as_ref().unwrap().to_string(),
+                    &created_document.space_id.to_string(),
+                    &created_document.title,
+                    &created_document.content,
+                    &created_document.excerpt.clone().unwrap_or_default(),
+                    Vec::new(),
+                    duplicator_id,
+                    created_document.is_public,
+                )
+                .await;
         }
 
         Ok(created_document)
     }
 
-    pub async fn get_document_by_slug(&self, space_id: &str, slug: &str) -> Result<Document, ApiError> {
+    pub async fn get_document_by_slug(
+        &self,
+        space_id: &str,
+        slug: &str,
+    ) -> Result<Document, ApiError> {
         let query = format!(
             "SELECT {} FROM document
              WHERE space_id = type::record($space_id)
@@ -753,7 +804,9 @@ impl DocumentService {
             Self::document_select_fields()
         );
 
-        let mut result = self.db.client
+        let mut result = self
+            .db
+            .client
             .query(query)
             .bind(("space_id", format!("space:{}", space_id)))
             .bind(("slug", slug))
@@ -764,7 +817,8 @@ impl DocumentService {
             .take(0)
             .map_err(|e| ApiError::DatabaseError(e.to_string()))?;
 
-        documents.into_iter()
+        documents
+            .into_iter()
             .next()
             .ok_or_else(|| ApiError::NotFound("Document not found".to_string()))
     }
@@ -779,7 +833,9 @@ impl DocumentService {
             Self::document_select_fields()
         );
 
-        let mut result = self.db.client
+        let mut result = self
+            .db
+            .client
             .query(query)
             .bind(("record_id", record_id))
             .await
@@ -789,17 +845,17 @@ impl DocumentService {
             .take(0)
             .map_err(|e| ApiError::DatabaseError(e.to_string()))?;
 
-        let raw = rows.into_iter()
+        let raw = rows
+            .into_iter()
             .next()
             .ok_or_else(|| ApiError::NotFound("Document not found".to_string()))?;
 
-        let document: Document = serde_json::from_value(raw.clone())
-            .map_err(|e| {
-                ApiError::DatabaseError(format!(
-                    "get_document_by_id/decode failed: {} | raw={}",
-                    e, raw
-                ))
-            })?;
+        let document: Document = serde_json::from_value(raw.clone()).map_err(|e| {
+            ApiError::DatabaseError(format!(
+                "get_document_by_id/decode failed: {} | raw={}",
+                e, raw
+            ))
+        })?;
         Ok(document)
     }
 
@@ -812,7 +868,9 @@ impl DocumentService {
             GROUP ALL
         ";
 
-        let result: Vec<serde_json::Value> = self.db.client
+        let result: Vec<serde_json::Value> = self
+            .db
+            .client
             .query(query)
             .bind(("space_id", format!("space:{}", space_id)))
             .bind(("slug", slug))
@@ -830,7 +888,11 @@ impl DocumentService {
         Ok(count > 0)
     }
 
-    async fn verify_parent_document(&self, space_id: &str, parent_id: &str) -> Result<(), ApiError> {
+    async fn verify_parent_document(
+        &self,
+        space_id: &str,
+        parent_id: &str,
+    ) -> Result<(), ApiError> {
         let query = "
             SELECT id FROM document
             WHERE id = type::record($parent_id)
@@ -838,13 +900,15 @@ impl DocumentService {
             AND is_deleted = false
         ";
 
-        let mut response = self.db.client
+        let mut response = self
+            .db
+            .client
             .query(query)
             .bind(("parent_id", format!("document:{}", parent_id)))
             .bind(("space_id", format!("space:{}", space_id)))
             .await
             .map_err(|e| ApiError::DatabaseError(e.to_string()))?;
-            
+
         let result: Vec<serde_json::Value> = response
             .take(0)
             .map_err(|e| ApiError::DatabaseError(e.to_string()))?;

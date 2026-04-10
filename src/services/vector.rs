@@ -1,8 +1,8 @@
-use std::sync::Arc;
+use crate::error::{AppError, Result};
+use crate::services::database::Database;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use crate::services::database::Database;
-use crate::error::{AppError, Result};
+use std::sync::Arc;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VectorData {
@@ -95,7 +95,9 @@ impl VectorService {
     ) -> Result<VectorResponse> {
         // 验证向量维度
         if vector_data.embedding.len() != vector_data.dimension {
-            return Err(AppError::BadRequest("Vector dimension mismatch".to_string()));
+            return Err(AppError::BadRequest(
+                "Vector dimension mismatch".to_string(),
+            ));
         }
 
         // 获取文档信息以验证文档存在并获取space_id
@@ -103,29 +105,35 @@ impl VectorService {
             "SELECT id, space_id FROM document WHERE id = document:{} LIMIT 1",
             document_id
         );
-        
-        let mut doc_result = self.db.client
+
+        let mut doc_result = self
+            .db
+            .client
             .query(doc_query)
             .await
             .map_err(|e| AppError::DatabaseError(format!("Failed to fetch document: {}", e)))?;
-        
-        let docs: Vec<serde_json::Value> = doc_result.take(0)
-            .map_err(|e| AppError::DatabaseError(format!("Failed to parse document result: {}", e)))?;
-        
+
+        let docs: Vec<serde_json::Value> = doc_result.take(0).map_err(|e| {
+            AppError::DatabaseError(format!("Failed to parse document result: {}", e))
+        })?;
+
         if docs.is_empty() {
             return Err(AppError::NotFound("Document not found".to_string()));
         }
-        
-        let space_id = docs[0]["space_id"].as_str()
+
+        let space_id = docs[0]["space_id"]
+            .as_str()
             .ok_or_else(|| AppError::DatabaseError("Invalid space_id".to_string()))?
             .replace("space:", "");
 
         // 将向量转换为JSON格式
-        let embedding_json = serde_json::to_string(&vector_data.embedding)
-            .map_err(|e| AppError::DatabaseError(format!("Failed to serialize embedding: {}", e)))?;
+        let embedding_json = serde_json::to_string(&vector_data.embedding).map_err(|e| {
+            AppError::DatabaseError(format!("Failed to serialize embedding: {}", e))
+        })?;
 
         // 存储到数据库
-        let metadata_json = vector_data.metadata
+        let metadata_json = vector_data
+            .metadata
             .map(|m| m.to_string())
             .unwrap_or_else(|| "{}".to_string());
 
@@ -148,15 +156,19 @@ impl VectorService {
             metadata_json
         );
 
-        let mut result = self.db.client
+        let mut result = self
+            .db
+            .client
             .query(query)
             .await
             .map_err(|e| AppError::DatabaseError(format!("Failed to store vector: {}", e)))?;
 
-        let created: Vec<serde_json::Value> = result.take(0)
-            .map_err(|e| AppError::DatabaseError(format!("Failed to parse create result: {}", e)))?;
+        let created: Vec<serde_json::Value> = result.take(0).map_err(|e| {
+            AppError::DatabaseError(format!("Failed to parse create result: {}", e))
+        })?;
 
-        let vector_id = created.get(0)
+        let vector_id = created
+            .get(0)
             .and_then(|v| v["id"].as_str())
             .ok_or_else(|| AppError::DatabaseError("Failed to get vector ID".to_string()))?;
 
@@ -173,9 +185,10 @@ impl VectorService {
         request: VectorSearchRequest,
     ) -> Result<VectorSearchResponse> {
         // 构建查询向量字符串
-        let query_vector_str = serde_json::to_string(&request.query_vector)
-            .map_err(|e| AppError::DatabaseError(format!("Failed to serialize query vector: {}", e)))?;
-        
+        let query_vector_str = serde_json::to_string(&request.query_vector).map_err(|e| {
+            AppError::DatabaseError(format!("Failed to serialize query vector: {}", e))
+        })?;
+
         // 构建查询
         let query = if let Some(space_id) = request.space_id {
             format!(
@@ -194,7 +207,11 @@ impl VectorService {
                 LIMIT {}
                 "#,
                 query_vector_str,
-                if request.include_content { "document_id.content" } else { "NONE" },
+                if request.include_content {
+                    "document_id.content"
+                } else {
+                    "NONE"
+                },
                 space_id,
                 query_vector_str,
                 request.threshold,
@@ -216,20 +233,27 @@ impl VectorService {
                 LIMIT {}
                 "#,
                 query_vector_str,
-                if request.include_content { "document_id.content" } else { "NONE" },
+                if request.include_content {
+                    "document_id.content"
+                } else {
+                    "NONE"
+                },
                 query_vector_str,
                 request.threshold,
                 request.limit
             )
         };
 
-        let mut results = self.db.client
+        let mut results = self
+            .db
+            .client
             .query(query)
             .await
             .map_err(|e| AppError::DatabaseError(format!("Failed to search vectors: {}", e)))?;
 
-        let rows: Vec<serde_json::Value> = results.take(0)
-            .map_err(|e| AppError::DatabaseError(format!("Failed to parse search results: {}", e)))?;
+        let rows: Vec<serde_json::Value> = results.take(0).map_err(|e| {
+            AppError::DatabaseError(format!("Failed to parse search results: {}", e))
+        })?;
 
         let search_results: Vec<VectorSearchResult> = rows
             .iter()
@@ -256,10 +280,7 @@ impl VectorService {
     }
 
     /// 获取文档的所有向量
-    pub async fn get_document_vectors(
-        &self,
-        document_id: &str,
-    ) -> Result<DocumentVectorsResponse> {
+    pub async fn get_document_vectors(&self, document_id: &str) -> Result<DocumentVectorsResponse> {
         let query = format!(
             r#"
             SELECT * FROM document_vector
@@ -269,13 +290,16 @@ impl VectorService {
             document_id
         );
 
-        let mut vectors = self.db.client
+        let mut vectors = self
+            .db
+            .client
             .query(query)
             .await
             .map_err(|e| AppError::DatabaseError(format!("Failed to get vectors: {}", e)))?;
 
-        let rows: Vec<serde_json::Value> = vectors.take(0)
-            .map_err(|e| AppError::DatabaseError(format!("Failed to parse vector results: {}", e)))?;
+        let rows: Vec<serde_json::Value> = vectors.take(0).map_err(|e| {
+            AppError::DatabaseError(format!("Failed to parse vector results: {}", e))
+        })?;
 
         let vector_infos: Vec<VectorInfo> = rows
             .iter()
@@ -297,13 +321,11 @@ impl VectorService {
     }
 
     /// 删除文档向量
-    pub async fn delete_vector(
-        &self,
-        vector_id: &str,
-    ) -> Result<bool> {
+    pub async fn delete_vector(&self, vector_id: &str) -> Result<bool> {
         let query = format!("DELETE {}", vector_id);
-        
-        self.db.client
+
+        self.db
+            .client
             .query(query)
             .await
             .map_err(|e| AppError::DatabaseError(format!("Failed to delete vector: {}", e)))?;
@@ -312,23 +334,22 @@ impl VectorService {
     }
 
     /// 批量存储向量
-    pub async fn store_vectors_batch(
-        &self,
-        vectors: Vec<BatchVectorData>,
-    ) -> Result<Vec<String>> {
+    pub async fn store_vectors_batch(&self, vectors: Vec<BatchVectorData>) -> Result<Vec<String>> {
         let mut vector_ids = Vec::new();
-        
+
         for vector_data in vectors {
-            let result = self.store_vector(
-                &vector_data.document_id,
-                VectorData {
-                    embedding: vector_data.embedding,
-                    model: vector_data.model,
-                    dimension: vector_data.dimension,
-                    metadata: None,
-                },
-            ).await?;
-            
+            let result = self
+                .store_vector(
+                    &vector_data.document_id,
+                    VectorData {
+                        embedding: vector_data.embedding,
+                        model: vector_data.model,
+                        dimension: vector_data.dimension,
+                        metadata: None,
+                    },
+                )
+                .await?;
+
             vector_ids.push(result.vector_id);
         }
 
@@ -346,23 +367,25 @@ impl VectorService {
             .map(|id| format!("document:{}", id))
             .collect::<Vec<_>>()
             .join(", ");
-        
+
         let fields_str = fields.join(", ");
-        
+
         let query = format!(
             "SELECT id, {} FROM document WHERE id IN [{}]",
-            fields_str,
-            ids_str
+            fields_str, ids_str
         );
-        
-        let mut results = self.db.client
+
+        let mut results = self
+            .db
+            .client
             .query(query)
             .await
             .map_err(|e| AppError::DatabaseError(format!("Failed to get documents: {}", e)))?;
-        
-        let docs: Vec<serde_json::Value> = results.take(0)
+
+        let docs: Vec<serde_json::Value> = results
+            .take(0)
             .map_err(|e| AppError::DatabaseError(format!("Failed to parse documents: {}", e)))?;
-        
+
         Ok(docs)
     }
 }

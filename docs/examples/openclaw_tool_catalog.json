@@ -1,0 +1,151 @@
+{
+  "version": "1.1",
+  "name": "souldoc-openclaw-agent-v1-minimal",
+  "description": "Minimal read-only SoulDoc tool catalog aligned to the /agent/v1 mainline for OpenClaw.",
+  "baseUrl": "${SOULDOC_BASE_URL}/agent/v1",
+  "auth": {
+    "type": "bearer",
+    "header": "Authorization",
+    "format": "Bearer ${SOULDOC_TOKEN}"
+  },
+  "tools": [
+    {
+      "name": "souldoc_system_health",
+      "description": "Liveness probe and capability discovery for the SoulDoc agent API.",
+      "method": "GET",
+      "path": "/system/health",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "safe": true,
+      "tags": ["read", "system", "health"]
+    },
+    {
+      "name": "souldoc_list_spaces",
+      "description": "List spaces visible to the current caller under existing access rules.",
+      "method": "GET",
+      "path": "/spaces",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "page": { "type": "integer", "minimum": 1 },
+          "limit": { "type": "integer", "minimum": 1 },
+          "search": { "type": "string" },
+          "owner_id": { "type": "string", "minLength": 1 },
+          "is_public": { "type": "boolean" },
+          "sort": { "type": "string" },
+          "order": {
+            "type": "string",
+            "enum": ["asc", "desc"]
+          }
+        },
+        "additionalProperties": false
+      },
+      "safe": true,
+      "tags": ["read", "spaces"]
+    },
+    {
+      "name": "souldoc_get_space",
+      "description": "Get metadata for a single space by stable space id.",
+      "method": "GET",
+      "path": "/spaces/{space_id}",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "space_id": { "type": "string", "minLength": 1 }
+        },
+        "required": ["space_id"],
+        "additionalProperties": false
+      },
+      "safe": true,
+      "tags": ["read", "spaces"]
+    },
+    {
+      "name": "souldoc_list_documents",
+      "description": "List documents inside one space by stable space id.",
+      "method": "GET",
+      "path": "/spaces/{space_id}/documents",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "space_id": { "type": "string", "minLength": 1 },
+          "page": { "type": "integer", "minimum": 1 },
+          "limit": { "type": "integer", "minimum": 1 },
+          "search": { "type": "string" },
+          "parent_id": { "type": "string" },
+          "is_public": { "type": "boolean" },
+          "author_id": { "type": "string" },
+          "sort": { "type": "string" },
+          "order": {
+            "type": "string",
+            "enum": ["asc", "desc"]
+          }
+        },
+        "required": ["space_id"],
+        "additionalProperties": false
+      },
+      "safe": true,
+      "tags": ["read", "documents"]
+    },
+    {
+      "name": "souldoc_get_document",
+      "description": "Get a document body by stable document id.",
+      "method": "GET",
+      "path": "/documents/{document_id}",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "document_id": { "type": "string", "minLength": 1 }
+        },
+        "required": ["document_id"],
+        "additionalProperties": false
+      },
+      "safe": true,
+      "tags": ["read", "documents", "content"]
+    },
+    {
+      "name": "souldoc_search_documents",
+      "description": "Keyword search across accessible SoulDoc documents.",
+      "method": "GET",
+      "path": "/search/documents",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "q": { "type": "string", "minLength": 1 },
+          "space_id": { "type": "string" },
+          "tags": {
+            "oneOf": [
+              { "type": "string" },
+              {
+                "type": "array",
+                "items": { "type": "string" }
+              }
+            ]
+          },
+          "author_id": { "type": "string" },
+          "page": { "type": "integer", "minimum": 1 },
+          "per_page": { "type": "integer", "minimum": 1 },
+          "sort": {
+            "type": "string",
+            "enum": ["relevance", "created_at", "updated_at", "title"]
+          }
+        },
+        "required": ["q"],
+        "additionalProperties": false
+      },
+      "safe": true,
+      "tags": ["read", "search"]
+    }
+  ],
+  "notIncluded": [
+    "space/document write APIs",
+    "member and permission management",
+    "file upload/download/delete APIs",
+    "comments/notifications/tag/version/publication management",
+    "vector write/delete/search and batch APIs",
+    "installer, /sso, and other system bridge endpoints",
+    "legacy /api/docs/* business REST as the primary OpenClaw contract"
+  ]
+}

@@ -1,19 +1,22 @@
-use std::sync::Arc;
-use std::path::Path;
-use axum::extract::Multipart;
 use anyhow::Result;
-use surrealdb::types::RecordId as Thing;
-use uuid::Uuid;
-use tracing::{info, error, warn};
-use tokio::fs as async_fs;
+use axum::extract::Multipart;
 use image::ImageFormat;
 use mime_guess::from_path;
+use std::path::Path;
+use std::sync::Arc;
+use surrealdb::types::RecordId as Thing;
+use tokio::fs as async_fs;
+use tracing::{error, info, warn};
+use uuid::Uuid;
 use validator::Validate;
 
 use crate::{
     error::ApiError,
-    models::file::{FileUpload, FileResponse, FileListResponse, FileQuery, UploadFileRequest},
-    services::{database::{Database, record_id_key}, auth::AuthService},
+    models::file::{FileListResponse, FileQuery, FileResponse, FileUpload, UploadFileRequest},
+    services::{
+        auth::AuthService,
+        database::{record_id_key, Database},
+    },
 };
 
 #[derive(Clone)]
@@ -61,15 +64,17 @@ impl FileUploadService {
         let mut content_type = None;
 
         // 处理 multipart 数据
-        while let Some(field) = multipart.next_field().await.map_err(|e| {
-            ApiError::bad_request(format!("Failed to read multipart field: {}", e))
-        })? {
+        while let Some(field) = multipart
+            .next_field()
+            .await
+            .map_err(|e| ApiError::bad_request(format!("Failed to read multipart field: {}", e)))?
+        {
             let field_name = field.name().unwrap_or("");
-            
+
             if field_name == "file" {
                 filename = field.file_name().map(|s| s.to_string());
                 content_type = field.content_type().map(|s| s.to_string());
-                
+
                 let data = field.bytes().await.map_err(|e| {
                     ApiError::bad_request(format!("Failed to read file data: {}", e))
                 })?;
@@ -87,20 +92,18 @@ impl FileUploadService {
             }
         }
 
-        let file_data = file_data.ok_or_else(|| {
-            ApiError::bad_request("No file found in request".to_string())
-        })?;
+        let file_data = file_data
+            .ok_or_else(|| ApiError::bad_request("No file found in request".to_string()))?;
 
-        let original_name = filename.ok_or_else(|| {
-            ApiError::bad_request("No filename provided".to_string())
-        })?;
+        let original_name =
+            filename.ok_or_else(|| ApiError::bad_request("No filename provided".to_string()))?;
 
         // 生成唯一文件名
         let file_extension = Path::new(&original_name)
             .extension()
             .and_then(|ext| ext.to_str())
             .unwrap_or("");
-        
+
         let unique_filename = if file_extension.is_empty() {
             Uuid::new_v4().to_string()
         } else {
@@ -109,7 +112,9 @@ impl FileUploadService {
 
         // 确定 MIME 类型
         let mime_type = content_type.unwrap_or_else(|| {
-            from_path(&original_name).first_or_octet_stream().to_string()
+            from_path(&original_name)
+                .first_or_octet_stream()
+                .to_string()
         });
 
         // 验证文件类型
@@ -117,7 +122,7 @@ impl FileUploadService {
 
         // 创建文件路径
         let file_path = Path::new(&self.upload_dir).join(&unique_filename);
-        
+
         // 保存文件
         async_fs::write(&file_path, &file_data).await.map_err(|e| {
             error!("Failed to save file: {}", e);
@@ -127,7 +132,10 @@ impl FileUploadService {
         // 如果是图片，生成缩略图
         if mime_type.starts_with("image/") {
             if let Err(e) = self.generate_thumbnail(&file_path, &unique_filename).await {
-                warn!("Failed to generate thumbnail for {}: {}", unique_filename, e);
+                warn!(
+                    "Failed to generate thumbnail for {}: {}",
+                    unique_filename, e
+                );
             }
         }
 
@@ -151,10 +159,13 @@ impl FileUploadService {
         }
 
         if let Some(document_id) = &request.document_id {
-            file_upload = file_upload.with_document(Self::record_id_from_input("document", document_id));
+            file_upload =
+                file_upload.with_document(Self::record_id_from_input("document", document_id));
         }
 
-        let created_files: Vec<FileUpload> = self.db.client
+        let created_files: Vec<FileUpload> = self
+            .db
+            .client
             .create("file_upload")
             .content(file_upload)
             .await
@@ -199,7 +210,7 @@ impl FileUploadService {
             .extension()
             .and_then(|ext| ext.to_str())
             .unwrap_or("");
-        
+
         let unique_filename = if file_extension.is_empty() {
             Uuid::new_v4().to_string()
         } else {
@@ -208,7 +219,9 @@ impl FileUploadService {
 
         // 确定 MIME 类型
         let mime_type = content_type.unwrap_or_else(|| {
-            from_path(&original_name).first_or_octet_stream().to_string()
+            from_path(&original_name)
+                .first_or_octet_stream()
+                .to_string()
         });
 
         // 验证文件类型
@@ -216,7 +229,7 @@ impl FileUploadService {
 
         // 创建文件路径
         let file_path = Path::new(&self.upload_dir).join(&unique_filename);
-        
+
         // 保存文件
         async_fs::write(&file_path, &file_data).await.map_err(|e| {
             error!("Failed to save file: {}", e);
@@ -226,7 +239,10 @@ impl FileUploadService {
         // 如果是图片，生成缩略图
         if mime_type.starts_with("image/") {
             if let Err(e) = self.generate_thumbnail(&file_path, &unique_filename).await {
-                warn!("Failed to generate thumbnail for {}: {}", unique_filename, e);
+                warn!(
+                    "Failed to generate thumbnail for {}: {}",
+                    unique_filename, e
+                );
             }
         }
 
@@ -250,10 +266,13 @@ impl FileUploadService {
         }
 
         if let Some(document_id) = &request.document_id {
-            file_upload = file_upload.with_document(Self::record_id_from_input("document", document_id));
+            file_upload =
+                file_upload.with_document(Self::record_id_from_input("document", document_id));
         }
 
-        let created_files: Vec<FileUpload> = self.db.client
+        let created_files: Vec<FileUpload> = self
+            .db
+            .client
             .create("file_upload")
             .content(file_upload)
             .await
@@ -273,7 +292,9 @@ impl FileUploadService {
     }
 
     pub async fn get_file(&self, file_id: &str) -> Result<FileUpload, ApiError> {
-        let file: Option<FileUpload> = self.db.client
+        let file: Option<FileUpload> = self
+            .db
+            .client
             .select(("file_upload", file_id))
             .await
             .map_err(|e| {
@@ -306,13 +327,19 @@ impl FileUploadService {
         if let Some(space_id) = &query.space_id {
             let space_thing = Self::record_id_from_input("space", space_id);
             sql.push_str(" AND space_id = $space_id");
-            params.push(("space_id", serde_json::Value::String(format!("space:{}", record_id_key(&space_thing)))));
+            params.push((
+                "space_id",
+                serde_json::Value::String(format!("space:{}", record_id_key(&space_thing))),
+            ));
         }
 
         if let Some(document_id) = &query.document_id {
             let doc_thing = Self::record_id_from_input("document", document_id);
             sql.push_str(" AND document_id = $document_id");
-            params.push(("document_id", serde_json::Value::String(format!("document:{}", record_id_key(&doc_thing)))));
+            params.push((
+                "document_id",
+                serde_json::Value::String(format!("document:{}", record_id_key(&doc_thing))),
+            ));
         }
 
         if let Some(file_type) = &query.file_type {
@@ -373,9 +400,13 @@ impl FileUploadService {
             // 检查是否有空间管理权限
             if let Some(space_id) = &file.space_id {
                 let space_id_str = record_id_key(space_id);
-                
+
                 // 检查用户是否有空间的管理权限
-                match self.auth_service.check_permission(user_id, "docs.admin", Some(&space_id_str)).await {
+                match self
+                    .auth_service
+                    .check_permission(user_id, "docs.admin", Some(&space_id_str))
+                    .await
+                {
                     Ok(_) => {
                         // 用户有管理权限，可以删除
                     }
@@ -385,7 +416,9 @@ impl FileUploadService {
                 }
             } else {
                 // 没有关联空间的文件，只有上传者可以删除
-                return Err(ApiError::forbidden("Permission denied: You can only delete your own files".to_string()));
+                return Err(ApiError::forbidden(
+                    "Permission denied: You can only delete your own files".to_string(),
+                ));
             }
         }
 
@@ -393,7 +426,9 @@ impl FileUploadService {
         file.mark_deleted(user_id.to_string());
 
         // 更新数据库
-        let _: Option<FileUpload> = self.db.client
+        let _: Option<FileUpload> = self
+            .db
+            .client
             .update(("file_upload", file_id))
             .content(file)
             .await
@@ -406,9 +441,12 @@ impl FileUploadService {
         Ok(())
     }
 
-    pub async fn get_file_content(&self, file_id: &str) -> Result<(Vec<u8>, String, String), ApiError> {
+    pub async fn get_file_content(
+        &self,
+        file_id: &str,
+    ) -> Result<(Vec<u8>, String, String), ApiError> {
         let file = self.get_file(file_id).await?;
-        
+
         let content = async_fs::read(&file.file_path).await.map_err(|e| {
             error!("Failed to read file content: {}", e);
             ApiError::internal_server_error("Failed to read file".to_string())
@@ -419,13 +457,13 @@ impl FileUploadService {
 
     pub async fn get_thumbnail(&self, file_id: &str) -> Result<Vec<u8>, ApiError> {
         let file = self.get_file(file_id).await?;
-        
+
         if !file.is_image() {
             return Err(ApiError::bad_request("File is not an image".to_string()));
         }
 
         let thumbnail_path = self.get_thumbnail_path(&file.filename);
-        
+
         if !thumbnail_path.exists() {
             return Err(ApiError::not_found("Thumbnail not found".to_string()));
         }
@@ -449,10 +487,14 @@ impl FileUploadService {
 
         let thumbnails_path = upload_path.join("thumbnails");
         if !thumbnails_path.exists() {
-            async_fs::create_dir_all(thumbnails_path).await.map_err(|e| {
-                error!("Failed to create thumbnails directory: {}", e);
-                ApiError::internal_server_error("Failed to create thumbnails directory".to_string())
-            })?;
+            async_fs::create_dir_all(thumbnails_path)
+                .await
+                .map_err(|e| {
+                    error!("Failed to create thumbnails directory: {}", e);
+                    ApiError::internal_server_error(
+                        "Failed to create thumbnails directory".to_string(),
+                    )
+                })?;
         }
 
         Ok(())
@@ -461,25 +503,40 @@ impl FileUploadService {
     fn validate_file_type(&self, mime_type: &str) -> Result<(), ApiError> {
         let allowed_types = [
             // 图片
-            "image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp", "image/svg+xml",
+            "image/jpeg",
+            "image/jpg",
+            "image/png",
+            "image/gif",
+            "image/webp",
+            "image/svg+xml",
             // 文档
-            "application/pdf", "application/msword", 
+            "application/pdf",
+            "application/msword",
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             "application/vnd.ms-excel",
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             "application/vnd.ms-powerpoint",
             "application/vnd.openxmlformats-officedocument.presentationml.presentation",
             // 文本
-            "text/plain", "text/markdown", "text/csv",
+            "text/plain",
+            "text/markdown",
+            "text/csv",
             // 代码
-            "application/json", "application/xml", "text/html", "text/css", "text/javascript",
+            "application/json",
+            "application/xml",
+            "text/html",
+            "text/css",
+            "text/javascript",
             // 压缩文件
-            "application/zip", "application/x-tar", "application/gzip",
+            "application/zip",
+            "application/x-tar",
+            "application/gzip",
         ];
 
         if !allowed_types.contains(&mime_type) {
             return Err(ApiError::bad_request(format!(
-                "File type '{}' is not allowed", mime_type
+                "File type '{}' is not allowed",
+                mime_type
             )));
         }
 
@@ -494,9 +551,13 @@ impl FileUploadService {
             "application/pdf" => "pdf".to_string(),
             t if t.contains("word") || t.contains("document") => "document".to_string(),
             t if t.contains("excel") || t.contains("spreadsheet") => "spreadsheet".to_string(),
-            t if t.contains("powerpoint") || t.contains("presentation") => "presentation".to_string(),
+            t if t.contains("powerpoint") || t.contains("presentation") => {
+                "presentation".to_string()
+            }
             t if t.starts_with("text/") => "text".to_string(),
-            t if t.contains("zip") || t.contains("tar") || t.contains("gzip") => "archive".to_string(),
+            t if t.contains("zip") || t.contains("tar") || t.contains("gzip") => {
+                "archive".to_string()
+            }
             _ => "other".to_string(),
         }
     }
@@ -504,10 +565,10 @@ impl FileUploadService {
     async fn generate_thumbnail(&self, file_path: &Path, filename: &str) -> Result<()> {
         let img = image::open(file_path)?;
         let thumbnail = img.thumbnail(300, 300);
-        
+
         let thumbnail_path = self.get_thumbnail_path(filename);
         thumbnail.save_with_format(&thumbnail_path, ImageFormat::Jpeg)?;
-        
+
         Ok(())
     }
 

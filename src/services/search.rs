@@ -1,14 +1,16 @@
 use std::sync::Arc;
-use surrealdb::types::RecordId as Thing;
 use std::time::Instant;
+use surrealdb::types::RecordId as Thing;
 
 use crate::{
     error::ApiError,
     models::search::{
-        SearchIndex, SearchRequest, SearchResult, SearchResponse, 
-        SearchSortBy, SearchHighlight
+        SearchHighlight, SearchIndex, SearchRequest, SearchResponse, SearchResult, SearchSortBy,
     },
-    services::{auth::AuthService, database::{Database, record_id_to_string}},
+    services::{
+        auth::AuthService,
+        database::{record_id_to_string, Database},
+    },
 };
 
 #[derive(Clone)]
@@ -23,7 +25,9 @@ impl SearchService {
     }
 
     pub async fn create_or_update_index(&self, index: SearchIndex) -> Result<(), ApiError> {
-        let created: Vec<SearchIndex> = self.db.client
+        let created: Vec<SearchIndex> = self
+            .db
+            .client
             .create("search_index")
             .content(index)
             .await
@@ -33,7 +37,9 @@ impl SearchService {
     }
 
     pub async fn delete_index(&self, document_id: &str) -> Result<(), ApiError> {
-        let _: Option<SearchIndex> = self.db.client
+        let _: Option<SearchIndex> = self
+            .db
+            .client
             .delete(("search_index", document_id))
             .await
             .map_err(|e| ApiError::Database(e))?;
@@ -47,7 +53,7 @@ impl SearchService {
         request: SearchRequest,
     ) -> Result<SearchResponse, ApiError> {
         let start_time = Instant::now();
-        
+
         let page = request.page.unwrap_or(1);
         let per_page = request.per_page.unwrap_or(20);
         let offset = (page - 1) * per_page;
@@ -58,11 +64,13 @@ impl SearchService {
             "WHERE is_public = true OR author_id = $user_id".to_string(),
         ];
 
-        let mut bindings: Vec<(String, String)> = vec![("user_id".to_string(), user_id.to_string())];
+        let mut bindings: Vec<(String, String)> =
+            vec![("user_id".to_string(), user_id.to_string())];
 
         // 添加查询条件
         if !request.query.is_empty() {
-            query_parts.push("AND (title CONTAINSTEXT $query OR content CONTAINSTEXT $query)".to_string());
+            query_parts
+                .push("AND (title CONTAINSTEXT $query OR content CONTAINSTEXT $query)".to_string());
             bindings.push(("query".to_string(), request.query.clone()));
         }
 
@@ -78,22 +86,25 @@ impl SearchService {
 
         if let Some(tags) = &request.tags {
             if !tags.is_empty() {
-                let tags_condition = tags.iter()
+                let tags_condition = tags
+                    .iter()
                     .enumerate()
                     .map(|(i, _)| format!("$tag_{} IN tags", i))
                     .collect::<Vec<_>>()
                     .join(" OR ");
                 query_parts.push(format!("AND ({})", tags_condition));
-                
+
                 for (i, tag) in tags.iter().enumerate() {
                     bindings.push((format!("tag_{}", i), tag.clone()));
                 }
             }
         }
 
-        // 排序  
+        // 排序
         let sort_clause = match request.sort_by.as_ref().unwrap_or(&SearchSortBy::Relevance) {
-            SearchSortBy::Relevance => "ORDER BY (title CONTAINSTEXT $query) DESC, last_updated DESC",
+            SearchSortBy::Relevance => {
+                "ORDER BY (title CONTAINSTEXT $query) DESC, last_updated DESC"
+            }
             SearchSortBy::CreatedAt => "ORDER BY id DESC",
             SearchSortBy::UpdatedAt => "ORDER BY last_updated DESC",
             SearchSortBy::Title => "ORDER BY title ASC",
@@ -125,7 +136,7 @@ impl SearchService {
         for index in search_indexes {
             let highlights = self.generate_highlights(&index, &request.query);
             let score = self.calculate_relevance_score(&index, &request.query);
-            
+
             results.push(SearchResult {
                 document_id: record_id_to_string(&index.document_id),
                 space_id: record_id_to_string(&index.space_id),
@@ -151,16 +162,22 @@ impl SearchService {
         ))
     }
 
-    async fn get_search_count(&self, user_id: &str, request: &SearchRequest) -> Result<i64, ApiError> {
+    async fn get_search_count(
+        &self,
+        user_id: &str,
+        request: &SearchRequest,
+    ) -> Result<i64, ApiError> {
         let mut query_parts = vec![
             "SELECT count() FROM search_index".to_string(),
             "WHERE is_public = true OR author_id = $user_id".to_string(),
         ];
 
-        let mut bindings: Vec<(String, String)> = vec![("user_id".to_string(), user_id.to_string())];
+        let mut bindings: Vec<(String, String)> =
+            vec![("user_id".to_string(), user_id.to_string())];
 
         if !request.query.is_empty() {
-            query_parts.push("AND (title CONTAINSTEXT $query OR content CONTAINSTEXT $query)".to_string());
+            query_parts
+                .push("AND (title CONTAINSTEXT $query OR content CONTAINSTEXT $query)".to_string());
             bindings.push(("query".to_string(), request.query.clone()));
         }
 
@@ -176,13 +193,14 @@ impl SearchService {
 
         if let Some(tags) = &request.tags {
             if !tags.is_empty() {
-                let tags_condition = tags.iter()
+                let tags_condition = tags
+                    .iter()
                     .enumerate()
                     .map(|(i, _)| format!("$tag_{} IN tags", i))
                     .collect::<Vec<_>>()
                     .join(" OR ");
                 query_parts.push(format!("AND ({})", tags_condition));
-                
+
                 for (i, tag) in tags.iter().enumerate() {
                     bindings.push((format!("tag_{}", i), tag.clone()));
                 }
@@ -214,13 +232,13 @@ impl SearchService {
 
     fn generate_highlights(&self, index: &SearchIndex, query: &str) -> Vec<SearchHighlight> {
         let mut highlights = Vec::new();
-        
+
         if query.is_empty() {
             return highlights;
         }
 
         let query_lower = query.to_lowercase();
-        
+
         // 在标题中查找高亮
         if let Some(pos) = index.title.to_lowercase().find(&query_lower) {
             highlights.push(SearchHighlight {
@@ -236,7 +254,7 @@ impl SearchService {
             let start = pos.saturating_sub(50);
             let end = (pos + query.len() + 50).min(index.content.len());
             let excerpt = &index.content[start..end];
-            
+
             highlights.push(SearchHighlight {
                 field: "content".to_string(),
                 text: format!("...{}...", excerpt),
@@ -259,7 +277,7 @@ impl SearchService {
         // 标题匹配权重更高
         if index.title.to_lowercase().contains(&query_lower) {
             score += 10.0;
-            
+
             // 完全匹配标题权重最高
             if index.title.to_lowercase() == query_lower {
                 score += 20.0;
@@ -279,7 +297,8 @@ impl SearchService {
         }
 
         // 最近更新的文档得分略高
-        let days_since_update = (chrono::Utc::now().timestamp() - index.last_updated.timestamp()) / 86400;
+        let days_since_update =
+            (chrono::Utc::now().timestamp() - index.last_updated.timestamp()) / 86400;
         if days_since_update < 30 {
             score += 1.0;
         }
@@ -287,7 +306,12 @@ impl SearchService {
         score
     }
 
-    pub async fn suggest_search_terms(&self, user_id: &str, prefix: &str, limit: i64) -> Result<Vec<String>, ApiError> {
+    pub async fn suggest_search_terms(
+        &self,
+        user_id: &str,
+        prefix: &str,
+        limit: i64,
+    ) -> Result<Vec<String>, ApiError> {
         let query = "
             SELECT title, tags FROM search_index 
             WHERE is_public = true OR author_id = $user_id
@@ -295,7 +319,9 @@ impl SearchService {
             LIMIT $limit
         ";
 
-        let results: Vec<SearchIndex> = self.db.client
+        let results: Vec<SearchIndex> = self
+            .db
+            .client
             .query(query)
             .bind(("user_id", user_id))
             .bind(("prefix", prefix))
@@ -306,17 +332,18 @@ impl SearchService {
             .map_err(|e| ApiError::Database(e))?;
 
         let mut suggestions = Vec::new();
-        
+
         for result in results {
             // 添加标题建议
             if result.title.to_lowercase().contains(&prefix.to_lowercase()) {
                 suggestions.push(result.title);
             }
-            
+
             // 添加标签建议
             for tag in result.tags {
-                if tag.to_lowercase().contains(&prefix.to_lowercase()) 
-                    && !suggestions.contains(&tag) {
+                if tag.to_lowercase().contains(&prefix.to_lowercase())
+                    && !suggestions.contains(&tag)
+                {
                     suggestions.push(tag);
                 }
             }
@@ -359,7 +386,9 @@ impl SearchService {
             WHERE is_deleted = false
         ";
 
-        let documents: Vec<serde_json::Value> = self.db.client
+        let documents: Vec<serde_json::Value> = self
+            .db
+            .client
             .query(query)
             .await
             .map_err(|e| ApiError::Database(e))?

@@ -1,9 +1,9 @@
-use serde::{Deserialize, Serialize};
-use chrono::{DateTime, Utc};
-use std::collections::HashMap;
-use validator::Validate;
-use surrealdb::types::RecordId as Thing;
 use crate::services::database::record_id_to_string;
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use surrealdb::types::RecordId as Thing;
+use validator::Validate;
 
 // 用于从数据库读取的内部结构
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -116,16 +116,27 @@ impl Default for NavigationSettings {
 
 #[derive(Debug, Serialize, Deserialize, Validate)]
 pub struct CreateSpaceRequest {
-    #[validate(length(min = 1, max = 100, message = "Name must be between 1 and 100 characters"))]
+    #[validate(length(
+        min = 1,
+        max = 100,
+        message = "Name must be between 1 and 100 characters"
+    ))]
     pub name: String,
-    
-    #[validate(length(min = 1, max = 50, message = "Slug must be between 1 and 50 characters"))]
-    #[validate(regex(path = "crate::models::space::SLUG_REGEX", message = "Slug can only contain lowercase letters, numbers, and hyphens"))]
+
+    #[validate(length(
+        min = 1,
+        max = 50,
+        message = "Slug must be between 1 and 50 characters"
+    ))]
+    #[validate(regex(
+        path = "crate::models::space::SLUG_REGEX",
+        message = "Slug can only contain lowercase letters, numbers, and hyphens"
+    ))]
     pub slug: String,
-    
+
     #[validate(length(max = 500, message = "Description cannot exceed 500 characters"))]
     pub description: Option<String>,
-    
+
     pub avatar_url: Option<String>,
     pub is_public: Option<bool>,
     pub settings: Option<SpaceSettings>,
@@ -133,12 +144,16 @@ pub struct CreateSpaceRequest {
 
 #[derive(Debug, Serialize, Deserialize, Validate)]
 pub struct UpdateSpaceRequest {
-    #[validate(length(min = 1, max = 100, message = "Name must be between 1 and 100 characters"))]
+    #[validate(length(
+        min = 1,
+        max = 100,
+        message = "Name must be between 1 and 100 characters"
+    ))]
     pub name: Option<String>,
-    
+
     #[validate(length(max = 500, message = "Description cannot exceed 500 characters"))]
     pub description: Option<String>,
-    
+
     pub avatar_url: Option<String>,
     pub is_public: Option<bool>,
     pub settings: Option<SpaceSettings>,
@@ -196,7 +211,7 @@ pub struct SpaceListQuery {
     pub search: Option<String>,
     pub owner_id: Option<String>,
     pub is_public: Option<bool>,
-    pub sort: Option<String>, // "name", "created_at", "updated_at"
+    pub sort: Option<String>,  // "name", "created_at", "updated_at"
     pub order: Option<String>, // "asc", "desc"
 }
 

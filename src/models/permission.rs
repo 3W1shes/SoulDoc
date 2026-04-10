@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
-use surrealdb::types::{Datetime, RecordId as Thing};
 use std::collections::HashMap;
+use surrealdb::types::{Datetime, RecordId as Thing};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DocumentPermission {
@@ -115,21 +115,26 @@ impl UserPermissions {
         self.inherited_permissions.extend(permissions);
     }
 
-    pub fn has_permission_for_resource(&self, resource_type: ResourceType, resource_id: &str, permission: &str) -> bool {
+    pub fn has_permission_for_resource(
+        &self,
+        resource_type: ResourceType,
+        resource_id: &str,
+        permission: &str,
+    ) -> bool {
         match resource_type {
-            ResourceType::Space => {
-                self.space_permissions
-                    .get(resource_id)
-                    .map_or(false, |perms| perms.contains(&permission.to_string()))
-            }
-            ResourceType::Document => {
-                self.document_permissions
-                    .get(resource_id)
-                    .map_or(false, |perms| perms.contains(&permission.to_string()))
-            }
+            ResourceType::Space => self
+                .space_permissions
+                .get(resource_id)
+                .map_or(false, |perms| perms.contains(&permission.to_string())),
+            ResourceType::Document => self
+                .document_permissions
+                .get(resource_id)
+                .map_or(false, |perms| perms.contains(&permission.to_string())),
             ResourceType::Comment => {
                 self.inherited_permissions.contains(&permission.to_string())
-                    || self.inherited_permissions.contains(&"docs.comment.manage".to_string())
+                    || self
+                        .inherited_permissions
+                        .contains(&"docs.comment.manage".to_string())
             }
         }
     }

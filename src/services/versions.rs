@@ -4,8 +4,11 @@ use validator::Validate;
 
 use crate::{
     error::ApiError,
-    models::version::{DocumentVersion, CreateVersionRequest, VersionChangeType},
-    services::{auth::AuthService, database::{Database, record_id_to_string}},
+    models::version::{CreateVersionRequest, DocumentVersion, VersionChangeType},
+    services::{
+        auth::AuthService,
+        database::{record_id_to_string, Database},
+    },
 };
 
 #[derive(Clone)]
@@ -45,7 +48,9 @@ impl VersionService {
         .with_summary(request.summary.unwrap_or_default())
         .set_as_current();
 
-        let created: Vec<DocumentVersion> = self.db.client
+        let created: Vec<DocumentVersion> = self
+            .db
+            .client
             .create("document_version")
             .content(version)
             .await
@@ -58,7 +63,9 @@ impl VersionService {
     }
 
     pub async fn get_version(&self, version_id: &str) -> Result<DocumentVersion, ApiError> {
-        let version: Option<DocumentVersion> = self.db.client
+        let version: Option<DocumentVersion> = self
+            .db
+            .client
             .select(("document_version", version_id))
             .await
             .map_err(|e| ApiError::DatabaseError(e.to_string()))?;
@@ -73,7 +80,7 @@ impl VersionService {
         per_page: i64,
     ) -> Result<Vec<DocumentVersion>, ApiError> {
         let offset = (page - 1) * per_page;
-        
+
         let query = "
             SELECT * FROM document_version 
             WHERE document_id = $document_id 
@@ -81,7 +88,9 @@ impl VersionService {
             LIMIT $limit START $offset
         ";
 
-        let versions: Vec<DocumentVersion> = self.db.client
+        let versions: Vec<DocumentVersion> = self
+            .db
+            .client
             .query(query)
             .bind(("document_id", Thing::new("document", document_id)))
             .bind(("limit", per_page))
@@ -94,7 +103,10 @@ impl VersionService {
         Ok(versions)
     }
 
-    pub async fn get_current_version(&self, document_id: &str) -> Result<Option<DocumentVersion>, ApiError> {
+    pub async fn get_current_version(
+        &self,
+        document_id: &str,
+    ) -> Result<Option<DocumentVersion>, ApiError> {
         let query = "
             SELECT * FROM document_version 
             WHERE document_id = $document_id 
@@ -102,7 +114,9 @@ impl VersionService {
             LIMIT 1
         ";
 
-        let versions: Vec<DocumentVersion> = self.db.client
+        let versions: Vec<DocumentVersion> = self
+            .db
+            .client
             .query(query)
             .bind(("document_id", Thing::new("document", document_id)))
             .await
@@ -120,21 +134,27 @@ impl VersionService {
         restorer_id: &str,
     ) -> Result<DocumentVersion, ApiError> {
         let old_version = self.get_version(version_id).await?;
-        
+
         // 验证版本属于指定文档
         if record_id_to_string(&old_version.document_id) != format!("document:{}", document_id) {
-            return Err(ApiError::BadRequest("Version does not belong to document".to_string()));
+            return Err(ApiError::BadRequest(
+                "Version does not belong to document".to_string(),
+            ));
         }
 
         // 创建新版本（恢复操作）
         let restore_request = CreateVersionRequest {
             title: old_version.title.clone(),
             content: old_version.content.clone(),
-            summary: Some(format!("Restored from version {}", old_version.version_number)),
+            summary: Some(format!(
+                "Restored from version {}",
+                old_version.version_number
+            )),
             change_type: VersionChangeType::Restored,
         };
 
-        self.create_version(document_id, restorer_id, restore_request).await
+        self.create_version(document_id, restorer_id, restore_request)
+            .await
     }
 
     pub async fn compare_versions(
@@ -147,7 +167,9 @@ impl VersionService {
 
         // 验证两个版本属于同一文档
         if version1.document_id != version2.document_id {
-            return Err(ApiError::BadRequest("Versions belong to different documents".to_string()));
+            return Err(ApiError::BadRequest(
+                "Versions belong to different documents".to_string(),
+            ));
         }
 
         let comparison = VersionComparison {
@@ -157,8 +179,7 @@ impl VersionService {
             content_diff: self.generate_content_diff(&version1.content, &version2.content),
             summary: format!(
                 "Comparing version {} to version {}",
-                version1.version_number,
-                version2.version_number
+                version1.version_number, version2.version_number
             ),
         };
 
@@ -181,7 +202,9 @@ impl VersionService {
             GROUP ALL
         ";
 
-        let result: Vec<serde_json::Value> = self.db.client
+        let result: Vec<serde_json::Value> = self
+            .db
+            .client
             .query(query)
             .bind(("document_id", Thing::new("document", document_id)))
             .await
@@ -214,13 +237,17 @@ impl VersionService {
 
     pub async fn delete_version(&self, version_id: &str) -> Result<(), ApiError> {
         let version = self.get_version(version_id).await?;
-        
+
         // 不允许删除当前版本
         if version.is_current {
-            return Err(ApiError::BadRequest("Cannot delete current version".to_string()));
+            return Err(ApiError::BadRequest(
+                "Cannot delete current version".to_string(),
+            ));
         }
 
-        let _: Option<DocumentVersion> = self.db.client
+        let _: Option<DocumentVersion> = self
+            .db
+            .client
             .delete(("document_version", version_id))
             .await
             .map_err(|e| ApiError::DatabaseError(e.to_string()))?;
@@ -240,7 +267,9 @@ impl VersionService {
             ORDER BY version_number DESC
         ";
 
-        let versions: Vec<DocumentVersion> = self.db.client
+        let versions: Vec<DocumentVersion> = self
+            .db
+            .client
             .query(query)
             .bind(("document_id", Thing::new("document", document_id)))
             .bind(("author_id", author_id))
@@ -260,7 +289,9 @@ impl VersionService {
             GROUP ALL
         ";
 
-        let result: Vec<serde_json::Value> = self.db.client
+        let result: Vec<serde_json::Value> = self
+            .db
+            .client
             .query(query)
             .bind(("document_id", Thing::new("document", document_id)))
             .await
@@ -285,7 +316,9 @@ impl VersionService {
             AND is_current = true
         ";
 
-        let _: Vec<serde_json::Value> = self.db.client
+        let _: Vec<serde_json::Value> = self
+            .db
+            .client
             .query(query)
             .bind(("document_id", Thing::new("document", document_id)))
             .await
@@ -300,14 +333,14 @@ impl VersionService {
         // 简化的差异算法，实际应用中可以使用更复杂的diff算法
         let old_lines: Vec<&str> = old_content.lines().collect();
         let new_lines: Vec<&str> = new_content.lines().collect();
-        
+
         let mut diffs = Vec::new();
         let max_lines = old_lines.len().max(new_lines.len());
-        
+
         for i in 0..max_lines {
             let old_line = old_lines.get(i).copied().unwrap_or("");
             let new_line = new_lines.get(i).copied().unwrap_or("");
-            
+
             if old_line != new_line {
                 if old_line.is_empty() {
                     diffs.push(ContentDiff {
@@ -333,7 +366,7 @@ impl VersionService {
                 }
             }
         }
-        
+
         diffs
     }
 }

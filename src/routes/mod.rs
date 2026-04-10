@@ -1,16 +1,17 @@
+pub mod agent;
+pub mod auth;
 pub mod comments;
 pub mod documents;
 pub mod files;
 pub mod notifications;
 pub mod publication;
 pub mod search;
-pub mod spaces;
 pub mod space_members;
+pub mod spaces;
 pub mod stats;
 pub mod tags;
-pub mod versions;
 pub mod vectors;
-pub mod auth;
+pub mod versions;
 
 #[cfg(feature = "installer")]
 pub mod installer;

@@ -1,18 +1,9 @@
-use axum::{
-    extract::State,
-    response::Json,
-    routing::get,
-    Router,
-    Extension,
-};
+use axum::{extract::State, response::Json, routing::get, Extension, Router};
 use serde::Serialize;
-use std::sync::Arc;
 use serde_json::json;
+use std::sync::Arc;
 
-use crate::{
-    error::Result,
-    services::auth::User,
-};
+use crate::{error::Result, services::auth::User};
 
 #[derive(Serialize)]
 pub struct SearchStats {
@@ -99,102 +90,110 @@ pub async fn get_document_stats(
     _user: User,
 ) -> Result<Json<serde_json::Value>> {
     let db = &app_state.db.client;
-    
+
     // 获取文档总数
-    let doc_count_query = "SELECT count() as total FROM document WHERE is_deleted = false GROUP ALL";
-    let mut doc_result = db.query(doc_count_query)
+    let doc_count_query =
+        "SELECT count() as total FROM document WHERE is_deleted = false GROUP ALL";
+    let mut doc_result = db
+        .query(doc_count_query)
         .await
         .map_err(|e| crate::error::ApiError::DatabaseError(e.to_string()))?;
-    
+
     let doc_records: Vec<serde_json::Value> = doc_result
         .take(0)
         .map_err(|e| crate::error::ApiError::DatabaseError(e.to_string()))?;
-    
+
     let total_documents = doc_records
         .first()
         .and_then(|v| v.get("total"))
         .and_then(|v| v.as_i64())
         .unwrap_or(0);
-    
+
     // 获取空间总数
     let space_count_query = "SELECT count() as total FROM space WHERE is_deleted = false GROUP ALL";
-    let mut space_result = db.query(space_count_query)
+    let mut space_result = db
+        .query(space_count_query)
         .await
         .map_err(|e| crate::error::ApiError::DatabaseError(e.to_string()))?;
-    
+
     let space_records: Vec<serde_json::Value> = space_result
         .take(0)
         .map_err(|e| crate::error::ApiError::DatabaseError(e.to_string()))?;
-    
+
     let total_spaces = space_records
         .first()
         .and_then(|v| v.get("total"))
         .and_then(|v| v.as_i64())
         .unwrap_or(0);
-    
+
     // 获取评论总数（暂时返回0）
     let total_comments = 0;
-    
+
     // 获取今天创建的文档数
     let today_docs_query = "SELECT count() as total FROM document 
         WHERE is_deleted = false 
         AND created_at >= time::floor(time::now(), 1d) 
         GROUP ALL";
-    
-    let mut today_result = db.query(today_docs_query)
+
+    let mut today_result = db
+        .query(today_docs_query)
         .await
         .map_err(|e| crate::error::ApiError::DatabaseError(e.to_string()))?;
-    
+
     let today_records: Vec<serde_json::Value> = today_result
         .take(0)
         .map_err(|e| crate::error::ApiError::DatabaseError(e.to_string()))?;
-    
+
     let documents_created_today = today_records
         .first()
         .and_then(|v| v.get("total"))
         .and_then(|v| v.as_i64())
         .unwrap_or(0);
-    
+
     // 获取最活跃的空间
     let active_spaces_query = "SELECT id, name FROM space WHERE is_deleted = false LIMIT 5";
-    
-    let mut active_result = db.query(active_spaces_query)
+
+    let mut active_result = db
+        .query(active_spaces_query)
         .await
         .map_err(|e| crate::error::ApiError::DatabaseError(e.to_string()))?;
-    
+
     let space_records: Vec<serde_json::Value> = active_result
         .take(0)
         .map_err(|e| crate::error::ApiError::DatabaseError(e.to_string()))?;
-    
+
     // 为每个空间获取文档数量
     let mut most_active_spaces = Vec::new();
     for record in space_records {
-        let space_id = record.get("id")
+        let space_id = record
+            .get("id")
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
-        let space_name = record.get("name")
+        let space_name = record
+            .get("name")
             .and_then(|v| v.as_str())
             .unwrap_or("未知空间")
             .to_string();
-        
+
         // 获取该空间的文档数量
         let doc_count_query = "SELECT count() as total FROM document WHERE space_id = $space_id AND is_deleted = false GROUP ALL";
-        let mut doc_count_result = db.query(doc_count_query)
+        let mut doc_count_result = db
+            .query(doc_count_query)
             .bind(("space_id", space_id.clone()))
             .await
             .map_err(|e| crate::error::ApiError::DatabaseError(e.to_string()))?;
-        
+
         let doc_count_records: Vec<serde_json::Value> = doc_count_result
             .take(0)
             .map_err(|e| crate::error::ApiError::DatabaseError(e.to_string()))?;
-        
+
         let document_count = doc_count_records
             .first()
             .and_then(|v| v.get("total"))
             .and_then(|v| v.as_i64())
             .unwrap_or(0);
-        
+
         most_active_spaces.push(SpaceActivity {
             space_id,
             space_name,
@@ -202,10 +201,10 @@ pub async fn get_document_stats(
             recent_activity: 0, // 暂时返回0
         });
     }
-    
+
     // 按文档数量排序
     most_active_spaces.sort_by(|a, b| b.document_count.cmp(&a.document_count));
-    
+
     let stats = DocumentStats {
         total_documents,
         total_spaces,

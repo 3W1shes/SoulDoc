@@ -1,15 +1,15 @@
 use crate::config::Config;
 use crate::error::{AppError, Result};
 use crate::models::space::{
-    Space, SpaceResponse, SpaceListResponse, SpaceListQuery, SpaceStats,
-    CreateSpaceRequest, UpdateSpaceRequest
+    CreateSpaceRequest, Space, SpaceListQuery, SpaceListResponse, SpaceResponse, SpaceStats,
+    UpdateSpaceRequest,
 };
 use crate::services::auth::User;
-use crate::services::database::{Database, record_id_key};
+use crate::services::database::{record_id_key, Database};
 use serde_json::Value;
 use std::sync::Arc;
 use surrealdb::types::RecordId as Thing;
-use tracing::{info, warn, error, debug};
+use tracing::{debug, error, info, warn};
 use validator::Validate;
 
 pub struct SpaceService {
@@ -22,31 +22,36 @@ impl SpaceService {
     }
 
     /// 创建新的文档空间
-    pub async fn create_space(&self, request: CreateSpaceRequest, user: &User) -> Result<SpaceResponse> {
+    pub async fn create_space(
+        &self,
+        request: CreateSpaceRequest,
+        user: &User,
+    ) -> Result<SpaceResponse> {
         fn map_create_space_db_error(err: surrealdb::Error) -> AppError {
             let msg = err.to_string();
             if msg.contains("space_slug_unique_idx") || msg.contains("already contains") {
                 return AppError::Conflict(
-                    "Space slug already exists globally. Please choose a different slug.".to_string(),
+                    "Space slug already exists globally. Please choose a different slug."
+                        .to_string(),
                 );
             }
             AppError::Database(err)
         }
 
         // 验证输入
-        request.validate().map_err(|e| AppError::Validation(e.to_string()))?;
+        request
+            .validate()
+            .map_err(|e| AppError::Validation(e.to_string()))?;
 
         // 检查slug是否已存在（全局唯一）
         if self.slug_exists(&request.slug).await? {
-            return Err(AppError::Conflict("Space slug already exists globally. Please choose a different slug.".to_string()));
+            return Err(AppError::Conflict(
+                "Space slug already exists globally. Please choose a different slug.".to_string(),
+            ));
         }
 
         // 创建空间对象
-        let mut space = Space::new(
-            request.name,
-            request.slug.clone(),
-            user.id.clone(),
-        );
+        let mut space = Space::new(request.name, request.slug.clone(), user.id.clone());
 
         if let Some(description) = request.description {
             space.description = Some(description);
@@ -83,7 +88,9 @@ impl SpaceService {
             } RETURN *;
         "#;
 
-        let mut response = self.db.client
+        let mut response = self
+            .db
+            .client
             .query(create_sql)
             .bind(("name", space.name.clone()))
             .bind(("slug", space.slug.clone()))
@@ -97,12 +104,10 @@ impl SpaceService {
                 map_create_space_db_error(e)
             })?;
 
-        let created_spaces: Vec<Space> = response
-            .take(0)
-            .map_err(|e| {
-                error!("Failed to decode created space: {}", e);
-                map_create_space_db_error(e)
-            })?;
+        let created_spaces: Vec<Space> = response.take(0).map_err(|e| {
+            error!("Failed to decode created space: {}", e);
+            map_create_space_db_error(e)
+        })?;
 
         let created_space = created_spaces.into_iter().next();
 
@@ -114,40 +119,56 @@ impl SpaceService {
         info!("Created new space: {} by user: {}", request.slug, user.id);
 
         // 记录活动日志
-        self.log_activity(&user.id, "space_created", "space", &created_space.id.as_ref().unwrap_or(&String::new())).await?;
+        self.log_activity(
+            &user.id,
+            "space_created",
+            "space",
+            &created_space.id.as_ref().unwrap_or(&String::new()),
+        )
+        .await?;
 
         Ok(SpaceResponse::from(created_space))
     }
 
     /// 获取空间列表
-    pub async fn list_spaces(&self, query: SpaceListQuery, user: Option<&User>) -> Result<SpaceListResponse> {
+    pub async fn list_spaces(
+        &self,
+        query: SpaceListQuery,
+        user: Option<&User>,
+    ) -> Result<SpaceListResponse> {
         let page = query.page.unwrap_or(1);
         let limit = query.limit.unwrap_or(20);
         let offset = (page - 1) * limit;
 
         // 构建查询条件
         let mut where_conditions = Vec::new();
-        let mut params: std::collections::HashMap<String, serde_json::Value> = std::collections::HashMap::new();
+        let mut params: std::collections::HashMap<String, serde_json::Value> =
+            std::collections::HashMap::new();
 
         // 权限过滤：只显示用户拥有的空间或用户加入的空间
         // 公开空间应该通过直接链接访问，而不是在列表中显示
         if let Some(user) = user {
             info!("Listing spaces for user: {}", user.id);
-            
+
             // 由于SurrealDB子查询语法问题，分两步获取：
             // 1. 先获取用户拥有的空间
             // 2. 再获取用户加入的空间，然后合并
-            
+
             // 这里先查询用户拥有的空间（owner_id 可能是 Thing，需要转成字符串比较）
             let user_id_raw = user.id.clone();
             let user_id_bracketed = format!("user:{}", user_id_raw);
-            let user_id_plain = user_id_raw.trim_matches(|c| c == '⟨' || c == '⟩').to_string();
+            let user_id_plain = user_id_raw
+                .trim_matches(|c| c == '⟨' || c == '⟩')
+                .to_string();
             let user_id_plain_prefixed = format!("user:{}", user_id_plain);
 
             where_conditions.push("(IF owner_id = NONE THEN '' ELSE type::string(owner_id) END) IN [$user_id_raw, $user_id_bracketed, $user_id_plain_prefixed]");
             params.insert("user_id_raw".to_string(), user_id_raw.into());
             params.insert("user_id_bracketed".to_string(), user_id_bracketed.into());
-            params.insert("user_id_plain_prefixed".to_string(), user_id_plain_prefixed.into());
+            params.insert(
+                "user_id_plain_prefixed".to_string(),
+                user_id_plain_prefixed.into(),
+            );
         } else {
             // 未登录用户看不到任何空间列表
             where_conditions.push("1 = 0");
@@ -173,7 +194,10 @@ impl SpaceService {
             where_conditions.push("(IF owner_id = NONE THEN '' ELSE type::string(owner_id) END) IN [$owner_raw, $owner_bracketed, $owner_plain_prefixed]");
             params.insert("owner_raw".to_string(), owner_raw.into());
             params.insert("owner_bracketed".to_string(), owner_bracketed.into());
-            params.insert("owner_plain_prefixed".to_string(), owner_plain_prefixed.into());
+            params.insert(
+                "owner_plain_prefixed".to_string(),
+                owner_plain_prefixed.into(),
+            );
         }
 
         // 公开性过滤
@@ -194,15 +218,21 @@ impl SpaceService {
         let order_clause = format!("ORDER BY {} {}", sort_field, sort_order);
 
         // 查询总数
-        let count_query = format!("SELECT count() AS total FROM space {} GROUP ALL", where_clause);
-        let count_result: Vec<serde_json::Value> = self.db.client
+        let count_query = format!(
+            "SELECT count() AS total FROM space {} GROUP ALL",
+            where_clause
+        );
+        let count_result: Vec<serde_json::Value> = self
+            .db
+            .client
             .query(&count_query)
             .bind(params.clone())
             .await
             .map_err(|e| AppError::Database(e))?
             .take(0)?;
-            
-        let total = count_result.first()
+
+        let total = count_result
+            .first()
             .and_then(|v| v.get("total"))
             .and_then(|v| v.as_u64())
             .unwrap_or(0) as u32;
@@ -224,7 +254,9 @@ impl SpaceService {
         info!("Query params: {:?}", params);
 
         // 直接获取为 Space（id 已是字符串）
-        let mut spaces: Vec<Space> = self.db.client
+        let mut spaces: Vec<Space> = self
+            .db
+            .client
             .query(&data_query)
             .bind(params)
             .await
@@ -237,13 +269,16 @@ impl SpaceService {
         // 如果是登录用户，还需要添加用户作为成员的空间
         if let Some(user) = user {
             let member_spaces = self.get_user_member_spaces(&user.id).await?;
-            info!("Found {} member spaces for user {}", member_spaces.len(), user.id);
-            
+            info!(
+                "Found {} member spaces for user {}",
+                member_spaces.len(),
+                user.id
+            );
+
             // 合并空间，避免重复
-            let existing_ids: std::collections::HashSet<String> = spaces.iter()
-                .filter_map(|s| s.id.clone())
-                .collect();
-            
+            let existing_ids: std::collections::HashSet<String> =
+                spaces.iter().filter_map(|s| s.id.clone()).collect();
+
             for member_space in member_spaces {
                 if let Some(space_id) = &member_space.id {
                     if !existing_ids.contains(space_id) {
@@ -264,7 +299,11 @@ impl SpaceService {
             space_responses.push(response);
         }
 
-        debug!("Listed {} spaces for user: {:?}", space_responses.len(), user.map(|u| &u.id));
+        debug!(
+            "Listed {} spaces for user: {:?}",
+            space_responses.len(),
+            user.map(|u| &u.id)
+        );
 
         Ok(SpaceListResponse {
             spaces: space_responses,
@@ -276,13 +315,18 @@ impl SpaceService {
     }
 
     /// 根据slug获取空间详情
-    pub async fn get_space_by_slug(&self, slug: &str, user: Option<&User>) -> Result<SpaceResponse> {
+    pub async fn get_space_by_slug(
+        &self,
+        slug: &str,
+        user: Option<&User>,
+    ) -> Result<SpaceResponse> {
         // SurrealDB 3 + current client stack can intermittently miss rows on bound slug filters
         // (WHERE slug = $slug). Use a validated literal to keep behavior stable.
         let slug_literal = sanitize_slug_for_query(slug)?;
-        let mut response = self.db.client
-            .query(
-                &format!(
+        let mut response = self
+            .db
+            .client
+            .query(&format!(
                 "SELECT
                     string::replace(type::string(id), 'space:', '') AS id,
                     name, slug, description, avatar_url, is_public, is_deleted,
@@ -294,8 +338,7 @@ impl SpaceService {
                  FROM space
                  WHERE slug = '{slug_literal}' AND is_deleted = false
                  LIMIT 1"
-                )
-            )
+            ))
             .await
             .map_err(AppError::Database)?;
         let spaces: Vec<Space> = response.take(0)?;
@@ -333,17 +376,23 @@ impl SpaceService {
         if !space.can_access(user.map(|u| u.id.as_str())) {
             // 注意：这里应该集成SpaceMemberService的权限检查
             // 但为了避免循环依赖，建议在调用方进行额外的成员权限检查
-            return Err(AppError::Authorization("Access denied to this space".to_string()));
+            return Err(AppError::Authorization(
+                "Access denied to this space".to_string(),
+            ));
         }
 
         let mut response = SpaceResponse::from(space);
-        
+
         // 获取统计信息
         if let Ok(stats) = self.get_space_stats(&response.id).await {
             response.stats = Some(stats);
         }
 
-        debug!("Retrieved space: {} for user: {:?}", slug, user.map(|u| &u.id));
+        debug!(
+            "Retrieved space: {} for user: {:?}",
+            slug,
+            user.map(|u| &u.id)
+        );
 
         Ok(response)
     }
@@ -353,10 +402,11 @@ impl SpaceService {
         let clean_id = sanitize_space_id_for_query(id)?;
         let query_id = format!("space:{}", clean_id);
         info!("get_space_by_id: searching for id = {}", query_id);
-        
-        let mut response = self.db.client
-            .query(
-                &format!(
+
+        let mut response = self
+            .db
+            .client
+            .query(&format!(
                 "SELECT
                     string::replace(type::string(id), 'space:', '') AS id,
                     name, slug, description, avatar_url, is_public, is_deleted,
@@ -368,8 +418,7 @@ impl SpaceService {
                  FROM ONLY type::record('{query_id}')
                  WHERE is_deleted = false
                  LIMIT 1"
-                )
-            )
+            ))
             .await
             .map_err(AppError::Database)?;
         let spaces: Vec<Space> = response.take(0)?;
@@ -408,53 +457,68 @@ impl SpaceService {
         if !space.can_access(user.map(|u| u.id.as_str())) {
             // 注意：这里应该集成SpaceMemberService的权限检查
             // 但为了避免循环依赖，建议在调用方进行额外的成员权限检查
-            return Err(AppError::Authorization("Access denied to this space".to_string()));
+            return Err(AppError::Authorization(
+                "Access denied to this space".to_string(),
+            ));
         }
 
         let mut response = SpaceResponse::from(space);
-        
+
         // 获取统计信息
         if let Ok(stats) = self.get_space_stats(&response.id).await {
             response.stats = Some(stats);
         }
 
-        debug!("Retrieved space by ID: {} for user: {:?}", id, user.map(|u| &u.id));
+        debug!(
+            "Retrieved space by ID: {} for user: {:?}",
+            id,
+            user.map(|u| &u.id)
+        );
 
         Ok(response)
     }
 
     /// 更新空间信息
-    pub async fn update_space(&self, slug: &str, request: UpdateSpaceRequest, user: &User) -> Result<SpaceResponse> {
+    pub async fn update_space(
+        &self,
+        slug: &str,
+        request: UpdateSpaceRequest,
+        user: &User,
+    ) -> Result<SpaceResponse> {
         // 验证输入
-        request.validate().map_err(|e| AppError::Validation(e.to_string()))?;
+        request
+            .validate()
+            .map_err(|e| AppError::Validation(e.to_string()))?;
 
         // 获取现有空间
         let existing_space = self.get_space_by_slug(slug, Some(user)).await?;
 
         // 检查权限：只有所有者可以更新
         if existing_space.owner_id != user.id {
-            return Err(AppError::Authorization("Only space owner can update space".to_string()));
+            return Err(AppError::Authorization(
+                "Only space owner can update space".to_string(),
+            ));
         }
 
         // 构建更新数据
         let mut update_data = std::collections::HashMap::new();
-        
+
         if let Some(name) = request.name {
             update_data.insert("name", Value::String(name));
         }
-        
+
         if let Some(description) = request.description {
             update_data.insert("description", Value::String(description));
         }
-        
+
         if let Some(avatar_url) = request.avatar_url {
             update_data.insert("avatar_url", Value::String(avatar_url));
         }
-        
+
         if let Some(is_public) = request.is_public {
             update_data.insert("is_public", Value::Bool(is_public));
         }
-        
+
         if request.settings.is_some() {
             // Keep compatibility with current SCHEMAFULL schema (no settings.* subfield defs).
             update_data.insert("settings", serde_json::json!({}));
@@ -462,12 +526,14 @@ impl SpaceService {
         }
 
         // 执行更新
-        let mut response = self.db.client
+        let mut response = self
+            .db
+            .client
             .query(
                 "UPDATE space
                  SET $data, updated_at = time::now()
                  WHERE slug = $slug
-                 RETURN AFTER"
+                 RETURN AFTER",
             )
             .bind(("data", update_data))
             .bind(("slug", slug))
@@ -475,14 +541,21 @@ impl SpaceService {
             .map_err(AppError::Database)?;
         let updated_spaces: Vec<Space> = response.take((0, "AFTER"))?;
 
-        let updated_space = updated_spaces.into_iter().next().ok_or_else(|| {
-            AppError::Internal(anyhow::anyhow!("Failed to update space"))
-        })?;
+        let updated_space = updated_spaces
+            .into_iter()
+            .next()
+            .ok_or_else(|| AppError::Internal(anyhow::anyhow!("Failed to update space")))?;
 
         info!("Updated space: {} by user: {}", slug, user.id);
 
         // 记录活动日志
-        self.log_activity(&user.id, "space_updated", "space", &updated_space.id.as_ref().unwrap_or(&String::new())).await?;
+        self.log_activity(
+            &user.id,
+            "space_updated",
+            "space",
+            &updated_space.id.as_ref().unwrap_or(&String::new()),
+        )
+        .await?;
 
         Ok(SpaceResponse::from(updated_space))
     }
@@ -494,11 +567,15 @@ impl SpaceService {
 
         // 检查权限：只有所有者可以删除
         if existing_space.owner_id != user.id {
-            return Err(AppError::Authorization("Only space owner can delete space".to_string()));
+            return Err(AppError::Authorization(
+                "Only space owner can delete space".to_string(),
+            ));
         }
 
         // 检查空间是否有文档
-        let doc_count: Option<u32> = self.db.client
+        let doc_count: Option<u32> = self
+            .db
+            .client
             .query("SELECT count() FROM document WHERE space_id = $space_id")
             .bind(("space_id", format!("space:{}", existing_space.id)))
             .await
@@ -507,12 +584,16 @@ impl SpaceService {
 
         if let Some(count) = doc_count {
             if count > 0 {
-                return Err(AppError::Conflict("Cannot delete space with existing documents".to_string()));
+                return Err(AppError::Conflict(
+                    "Cannot delete space with existing documents".to_string(),
+                ));
             }
         }
 
         // 删除空间
-        let _: Option<serde_json::Value> = self.db.client
+        let _: Option<serde_json::Value> = self
+            .db
+            .client
             .query("DELETE space WHERE slug = $slug")
             .bind(("slug", slug))
             .await
@@ -522,14 +603,17 @@ impl SpaceService {
         info!("Deleted space: {} by user: {}", slug, user.id);
 
         // 记录活动日志
-        self.log_activity(&user.id, "space_deleted", "space", &existing_space.id).await?;
+        self.log_activity(&user.id, "space_deleted", "space", &existing_space.id)
+            .await?;
 
         Ok(())
     }
 
     /// 检查slug是否已存在（全局检查）
     async fn slug_exists(&self, slug: &str) -> Result<bool> {
-        let existing: Option<surrealdb::types::RecordId> = self.db.client
+        let existing: Option<surrealdb::types::RecordId> = self
+            .db
+            .client
             .query("SELECT VALUE id FROM space WHERE slug = $slug AND is_deleted = false LIMIT 1")
             .bind(("slug", slug))
             .await
@@ -540,9 +624,11 @@ impl SpaceService {
     }
 
     /// 获取空间统计信息
-    async fn get_space_stats(&self, space_id: &str) -> Result<SpaceStats> {
+    pub async fn get_space_stats(&self, space_id: &str) -> Result<SpaceStats> {
         // 查询文档数量
-        let doc_count: Option<u32> = self.db.client
+        let doc_count: Option<u32> = self
+            .db
+            .client
             .query("SELECT count() FROM document WHERE space_id = $space_id")
             .bind(("space_id", format!("space:{}", space_id)))
             .await
@@ -550,7 +636,9 @@ impl SpaceService {
             .take((0, "count"))?;
 
         // 查询公开文档数量
-        let public_doc_count: Option<u32> = self.db.client
+        let public_doc_count: Option<u32> = self
+            .db
+            .client
             .query("SELECT count() FROM document WHERE space_id = $space_id AND is_public = true")
             .bind(("space_id", format!("space:{}", space_id)))
             .await
@@ -597,7 +685,7 @@ impl SpaceService {
     /// 获取用户作为成员的空间列表
     async fn get_user_member_spaces(&self, user_id: &str) -> Result<Vec<Space>> {
         info!("Getting member spaces for user: {}", user_id);
-        
+
         // 统一成裸 UUID，避免 user:⟨...⟩ / user:... / ⟨...⟩ 三种格式不一致
         let clean_user_id = user_id
             .trim()
@@ -605,8 +693,11 @@ impl SpaceService {
             .unwrap_or(user_id)
             .trim_matches(|c| c == '⟨' || c == '⟩')
             .to_string();
-        info!("Querying member spaces with cleaned user_id: {} (original: {})", clean_user_id, user_id);
-        
+        info!(
+            "Querying member spaces with cleaned user_id: {} (original: {})",
+            clean_user_id, user_id
+        );
+
         // 查询用户是成员的space_id列表
         let user_id_bracketed = format!("user:⟨{}⟩", clean_user_id);
         let user_id_plain = format!("user:{}", clean_user_id);
@@ -617,7 +708,9 @@ impl SpaceService {
             WHERE type::string(user_id) IN [$user_id_bracketed, $user_id_plain, $user_id_raw]
               AND status = 'accepted'
         "#;
-        let member_results: Vec<surrealdb::types::Value> = self.db.client
+        let member_results: Vec<surrealdb::types::Value> = self
+            .db
+            .client
             .query(member_query)
             .bind(("user_id_bracketed", user_id_bracketed))
             .bind(("user_id_plain", user_id_plain))
@@ -628,23 +721,29 @@ impl SpaceService {
                 AppError::Database(e)
             })?
             .take(0)?;
-            
+
         // 如果没有找到结果，尝试查看所有space_member记录进行调试
         if member_results.is_empty() {
             info!("No member spaces found for cleaned user_id: {} (original: {}), checking all space_member records for debugging", clean_user_id, user_id);
-            let all_members: Vec<surrealdb::types::Value> = self.db.client
+            let all_members: Vec<surrealdb::types::Value> = self
+                .db
+                .client
                 .query("SELECT user_id, space_id, status FROM space_member LIMIT 5")
                 .await
                 .map_err(|e| AppError::Database(e))?
                 .take(0)?;
-            
+
             for member in &all_members {
                 info!("Found space_member record: {:?}", member);
             }
         }
-        
-        info!("Found {} space member records for user {}", member_results.len(), user_id);
-        
+
+        info!(
+            "Found {} space member records for user {}",
+            member_results.len(),
+            user_id
+        );
+
         // 提取space_id列表
         let mut space_ids = Vec::new();
         for result in member_results {
@@ -673,16 +772,18 @@ impl SpaceService {
                 }
             }
         }
-        
+
         if space_ids.is_empty() {
             info!("No member spaces found for user {}", user_id);
             return Ok(Vec::new());
         }
-        
+
         // 查询对应的space记录
         let mut spaces = Vec::new();
         for space_id in space_ids {
-            let space_results: Vec<Space> = self.db.client
+            let space_results: Vec<Space> = self
+                .db
+                .client
                 .query(
                     "SELECT
                         string::replace(type::string(id), 'space:', '') AS id,
@@ -690,7 +791,7 @@ impl SpaceService {
                         owner_id, settings, theme_config, member_count, document_count,
                         created_at, updated_at, created_by, updated_by
                      FROM space
-                     WHERE id = $space_id AND is_deleted = false"
+                     WHERE id = $space_id AND is_deleted = false",
                 )
                 .bind(("space_id", Thing::new("space", space_id.as_str())))
                 .await
@@ -699,19 +800,31 @@ impl SpaceService {
                     AppError::Database(e)
                 })?
                 .take(0)?;
-                
+
             for space in space_results {
                 spaces.push(space);
             }
         }
-        
-        info!("Retrieved {} actual spaces for user {}", spaces.len(), user_id);
+
+        info!(
+            "Retrieved {} actual spaces for user {}",
+            spaces.len(),
+            user_id
+        );
         Ok(spaces)
     }
 
     /// 记录活动日志
-    async fn log_activity(&self, user_id: &str, action: &str, resource_type: &str, resource_id: &str) -> Result<()> {
-        let mut response = self.db.client
+    async fn log_activity(
+        &self,
+        user_id: &str,
+        action: &str,
+        resource_type: &str,
+        resource_id: &str,
+    ) -> Result<()> {
+        let mut response = self
+            .db
+            .client
             .query(
                 "CREATE activity_log SET
                     user_id = $user_id,
@@ -719,7 +832,7 @@ impl SpaceService {
                     resource_type = $resource_type,
                     resource_id = $resource_id,
                     details = {},
-                    created_at = time::now()"
+                    created_at = time::now()",
             )
             .bind(("user_id", user_id))
             .bind(("action", action))
@@ -735,17 +848,15 @@ impl SpaceService {
 
         Ok(())
     }
-
 }
 
 fn sanitize_slug_for_query(slug: &str) -> Result<String> {
     if slug.is_empty() {
-        return Err(AppError::Validation("space slug cannot be empty".to_string()));
+        return Err(AppError::Validation(
+            "space slug cannot be empty".to_string(),
+        ));
     }
-    if slug
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '-')
-    {
+    if slug.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
         return Ok(slug.to_string());
     }
     Err(AppError::Validation(
@@ -791,7 +902,7 @@ mod tests {
         assert!(request.validate().is_err());
     }
 
-    #[tokio::test] 
+    #[tokio::test]
     async fn test_slug_validation() {
         let valid_request = CreateSpaceRequest {
             name: "Test Space".to_string(),

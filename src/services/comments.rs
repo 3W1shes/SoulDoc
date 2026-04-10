@@ -5,7 +5,10 @@ use validator::Validate;
 use crate::{
     error::ApiError,
     models::comment::{Comment, CreateCommentRequest, UpdateCommentRequest},
-    services::{auth::AuthService, database::{Database, record_id_to_string}},
+    services::{
+        auth::AuthService,
+        database::{record_id_to_string, Database},
+    },
 };
 
 #[derive(Clone)]
@@ -44,7 +47,9 @@ impl CommentService {
             comment = comment.with_parent(record_id_to_string(&parent_id));
         }
 
-        let created: Vec<Comment> = self.db.client
+        let created: Vec<Comment> = self
+            .db
+            .client
             .create("comment")
             .content(comment)
             .await
@@ -57,7 +62,9 @@ impl CommentService {
     }
 
     pub async fn get_comment(&self, comment_id: &str) -> Result<Comment, ApiError> {
-        let comment: Option<Comment> = self.db.client
+        let comment: Option<Comment> = self
+            .db
+            .client
             .select(("comment", comment_id))
             .await
             .map_err(|e| ApiError::DatabaseError(e.to_string()))?;
@@ -74,12 +81,14 @@ impl CommentService {
         request.validate()?;
 
         let mut comment = self.get_comment(comment_id).await?;
-        
+
         if let Some(content) = request.content {
             comment.update_content(content, editor_id.to_string());
         }
 
-        let updated: Option<Comment> = self.db.client
+        let updated: Option<Comment> = self
+            .db
+            .client
             .update(("comment", comment_id))
             .content(comment)
             .await
@@ -92,7 +101,9 @@ impl CommentService {
         let mut comment = self.get_comment(comment_id).await?;
         comment.soft_delete(deleter_id.to_string());
 
-        let _: Option<Comment> = self.db.client
+        let _: Option<Comment> = self
+            .db
+            .client
             .update(("comment", comment_id))
             .content(comment)
             .await
@@ -108,7 +119,7 @@ impl CommentService {
         per_page: i64,
     ) -> Result<Vec<Comment>, ApiError> {
         let offset = (page - 1) * per_page;
-        
+
         let query = "
             SELECT * FROM comment 
             WHERE document_id = $document_id 
@@ -118,7 +129,9 @@ impl CommentService {
             LIMIT $limit START $offset
         ";
 
-        let comments: Vec<Comment> = self.db.client
+        let comments: Vec<Comment> = self
+            .db
+            .client
             .query(query)
             .bind(("document_id", Thing::new("document", document_id)))
             .bind(("limit", per_page))
@@ -140,7 +153,9 @@ impl CommentService {
             GROUP ALL
         ";
 
-        let result: Vec<serde_json::Value> = self.db.client
+        let result: Vec<serde_json::Value> = self
+            .db
+            .client
             .query(query)
             .bind(("document_id", Thing::new("document", document_id)))
             .await
@@ -164,7 +179,7 @@ impl CommentService {
         per_page: i64,
     ) -> Result<Vec<Comment>, ApiError> {
         let offset = (page - 1) * per_page;
-        
+
         let query = "
             SELECT * FROM comment 
             WHERE parent_id = $parent_id 
@@ -173,7 +188,9 @@ impl CommentService {
             LIMIT $limit START $offset
         ";
 
-        let replies: Vec<Comment> = self.db.client
+        let replies: Vec<Comment> = self
+            .db
+            .client
             .query(query)
             .bind(("parent_id", Thing::new("comment", parent_id)))
             .bind(("limit", per_page))
@@ -194,7 +211,9 @@ impl CommentService {
             GROUP ALL
         ";
 
-        let result: Vec<serde_json::Value> = self.db.client
+        let result: Vec<serde_json::Value> = self
+            .db
+            .client
             .query(query)
             .bind(("parent_id", Thing::new("comment", parent_id)))
             .await
@@ -217,14 +236,16 @@ impl CommentService {
         user_id: &str,
     ) -> Result<Comment, ApiError> {
         let mut comment = self.get_comment(comment_id).await?;
-        
+
         if comment.liked_by.contains(&user_id.to_string()) {
             comment.unlike(user_id.to_string());
         } else {
             comment.like(user_id.to_string());
         }
 
-        let updated: Option<Comment> = self.db.client
+        let updated: Option<Comment> = self
+            .db
+            .client
             .update(("comment", comment_id))
             .content(comment)
             .await
@@ -241,7 +262,9 @@ impl CommentService {
             ORDER BY created_at ASC
         ";
 
-        let thread: Vec<Comment> = self.db.client
+        let thread: Vec<Comment> = self
+            .db
+            .client
             .query(query)
             .bind(("comment_id", Thing::new("comment", comment_id)))
             .await
@@ -260,7 +283,7 @@ impl CommentService {
         per_page: i64,
     ) -> Result<Vec<Comment>, ApiError> {
         let offset = (page - 1) * per_page;
-        
+
         let search_query = "
             SELECT * FROM comment 
             WHERE document_id = $document_id 
@@ -270,7 +293,9 @@ impl CommentService {
             LIMIT $limit START $offset
         ";
 
-        let comments: Vec<Comment> = self.db.client
+        let comments: Vec<Comment> = self
+            .db
+            .client
             .query(search_query)
             .bind(("document_id", Thing::new("document", document_id)))
             .bind(("query", query))

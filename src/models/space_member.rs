@@ -1,8 +1,8 @@
-use serde::{Deserialize, Serialize};
-use chrono::{DateTime, Utc};
-use validator::Validate;
-use surrealdb::types::RecordId as Thing;
 use crate::services::database::{record_id_key, record_id_to_string};
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use surrealdb::types::RecordId as Thing;
+use validator::Validate;
 
 // 用于从数据库读取的内部结构
 #[derive(Debug, Clone, Deserialize)]
@@ -102,17 +102,9 @@ impl MemberRole {
                 "members.invite".to_string(),
                 "members.manage".to_string(),
             ],
-            MemberRole::Editor => vec![
-                "docs.read".to_string(),
-                "docs.write".to_string(),
-            ],
-            MemberRole::Viewer => vec![
-                "docs.read".to_string(),
-            ],
-            MemberRole::Member => vec![
-                "docs.read".to_string(),
-                "docs.write".to_string(),
-            ],
+            MemberRole::Editor => vec!["docs.read".to_string(), "docs.write".to_string()],
+            MemberRole::Viewer => vec!["docs.read".to_string()],
+            MemberRole::Member => vec!["docs.read".to_string(), "docs.write".to_string()],
         }
     }
 
@@ -125,14 +117,18 @@ impl MemberRole {
 pub struct InviteMemberRequest {
     #[validate(email(message = "Invalid email format"))]
     pub email: Option<String>,
-    
+
     pub user_id: Option<String>, // 直接通过用户ID邀请
-    
+
     pub role: MemberRole,
-    
+
     pub message: Option<String>,
-    
-    #[validate(range(min = 1, max = 365, message = "Expiration days must be between 1 and 365"))]
+
+    #[validate(range(
+        min = 1,
+        max = 365,
+        message = "Expiration days must be between 1 and 365"
+    ))]
     pub expires_in_days: Option<u32>, // 邀请过期天数，默认7天
 }
 

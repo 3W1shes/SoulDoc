@@ -5,17 +5,16 @@ use axum::{
     extract::{FromRequestParts, State},
     headers::{authorization::Bearer, Authorization},
     http::{request::Parts, StatusCode},
-    Extension,
-    RequestPartsExt, TypedHeader,
+    Extension, RequestPartsExt, TypedHeader,
 };
-use jsonwebtoken::{decode, DecodingKey, Validation, Algorithm};
+use chrono::{DateTime, Duration, Utc};
+use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 use std::collections::HashMap;
+use std::sync::Arc;
 use tokio::sync::RwLock;
-use chrono::{DateTime, Utc, Duration};
-use tracing::{info, warn, error, debug};
+use tracing::{debug, error, info, warn};
 
 #[derive(Clone)]
 pub struct AuthService {
@@ -47,9 +46,9 @@ struct ApiResponse<T> {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Claims {
-    pub sub: String,        // 用户ID
-    pub exp: i64,           // 过期时间
-    pub iat: i64,           // 签发时间
+    pub sub: String,                // 用户ID
+    pub exp: i64,                   // 过期时间
+    pub iat: i64,                   // 签发时间
     pub session_id: Option<String>, // 会话ID
 }
 
@@ -125,7 +124,9 @@ impl AuthService {
 
     pub async fn get_user_from_rainbow_auth(&self, user_id: &str, token: &str) -> Result<User> {
         if !self.config.auth.integration_mode {
-            return Err(AppError::Authentication("Rainbow-Auth integration not enabled".to_string()));
+            return Err(AppError::Authentication(
+                "Rainbow-Auth integration not enabled".to_string(),
+            ));
         }
 
         // 检查缓存
@@ -134,13 +135,14 @@ impl AuthService {
             return Ok(cached_user);
         }
 
-        let rainbow_auth_url = self.config.auth.rainbow_auth_url
-            .as_ref()
-            .ok_or_else(|| AppError::Authentication("Rainbow-Auth URL not configured".to_string()))?;
+        let rainbow_auth_url = self.config.auth.rainbow_auth_url.as_ref().ok_or_else(|| {
+            AppError::Authentication("Rainbow-Auth URL not configured".to_string())
+        })?;
 
         let url = format!("{}/api/auth/me", rainbow_auth_url);
-        
-        let response = match self.http_client
+
+        let response = match self
+            .http_client
             .get(&url)
             .header("Authorization", format!("Bearer {}", token))
             .send()
@@ -149,7 +151,10 @@ impl AuthService {
             Ok(resp) => resp,
             Err(e) => {
                 error!("Failed to fetch user from Rainbow-Auth: {}", e);
-                warn!("Rainbow-Auth request failed for user {}, fallback to local JWT identity", user_id);
+                warn!(
+                    "Rainbow-Auth request failed for user {}, fallback to local JWT identity",
+                    user_id
+                );
                 let fallback = self.build_fallback_user(user_id);
                 self.cache_user(user_id, fallback.clone()).await;
                 return Ok(fallback);
@@ -159,7 +164,10 @@ impl AuthService {
         let status = response.status();
         if !status.is_success() {
             let body = response.text().await.unwrap_or_default();
-            warn!("Rainbow-Auth returned error status: {} body: {}", status, body);
+            warn!(
+                "Rainbow-Auth returned error status: {} body: {}",
+                status, body
+            );
             if status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN {
                 return Err(AppError::Authentication("Invalid credentials".to_string()));
             }
@@ -172,14 +180,16 @@ impl AuthService {
                 self.cache_user(user_id, fallback.clone()).await;
                 return Ok(fallback);
             }
-            return Err(AppError::Authentication(format!("Rainbow-Auth unavailable: upstream status {}", status)));
+            return Err(AppError::Authentication(format!(
+                "Rainbow-Auth unavailable: upstream status {}",
+                status
+            )));
         }
 
-        let user_data: RainbowAuthUserResponse = response.json().await
-            .map_err(|e| {
-                error!("Failed to parse Rainbow-Auth response: {}", e);
-                AppError::Authentication("Invalid response from Rainbow-Auth".to_string())
-            })?;
+        let user_data: RainbowAuthUserResponse = response.json().await.map_err(|e| {
+            error!("Failed to parse Rainbow-Auth response: {}", e);
+            AppError::Authentication("Invalid response from Rainbow-Auth".to_string())
+        })?;
 
         // 获取用户角色和权限
         let (roles, permissions) = self.get_user_permissions(&user_data.id, token).await?;
@@ -225,25 +235,33 @@ impl AuthService {
 
     async fn cache_user(&self, user_id: &str, user: User) {
         let mut cache = self.user_cache.write().await;
-        cache.insert(user_id.to_string(), CachedUser {
-            user,
-            expires_at: Utc::now() + Duration::minutes(15), // 缓存15分钟
-        });
+        cache.insert(
+            user_id.to_string(),
+            CachedUser {
+                user,
+                expires_at: Utc::now() + Duration::minutes(15), // 缓存15分钟
+            },
+        );
     }
 
-    pub async fn get_user_permissions(&self, user_id: &str, token: &str) -> Result<(Vec<String>, Vec<String>)> {
+    pub async fn get_user_permissions(
+        &self,
+        user_id: &str,
+        token: &str,
+    ) -> Result<(Vec<String>, Vec<String>)> {
         if !self.config.auth.integration_mode {
             // 独立模式：返回默认权限
             return Ok((vec!["user".to_string()], vec!["docs.read".to_string()]));
         }
 
-        let rainbow_auth_url = self.config.auth.rainbow_auth_url
-            .as_ref()
-            .ok_or_else(|| AppError::Authentication("Rainbow-Auth URL not configured".to_string()))?;
+        let rainbow_auth_url = self.config.auth.rainbow_auth_url.as_ref().ok_or_else(|| {
+            AppError::Authentication("Rainbow-Auth URL not configured".to_string())
+        })?;
 
         // 获取用户角色
         let roles_url = format!("{}/api/rbac/users/{}/roles", rainbow_auth_url, user_id);
-        let roles_response = self.http_client
+        let roles_response = self
+            .http_client
             .get(&roles_url)
             .header("Authorization", format!("Bearer {}", token))
             .send()
@@ -251,7 +269,10 @@ impl AuthService {
             .map_err(|_| AppError::Authentication("Failed to fetch user roles".to_string()))?;
 
         let roles = if roles_response.status().is_success() {
-            match roles_response.json::<ApiResponse<serde_json::Value>>().await {
+            match roles_response
+                .json::<ApiResponse<serde_json::Value>>()
+                .await
+            {
                 Ok(resp) => {
                     if resp.success {
                         // We don't depend on roles content today; keep a safe default.
@@ -267,16 +288,25 @@ impl AuthService {
         };
 
         // 获取用户权限
-        let permissions_url = format!("{}/api/rbac/users/{}/permissions", rainbow_auth_url, user_id);
-        let permissions_response = self.http_client
+        let permissions_url = format!(
+            "{}/api/rbac/users/{}/permissions",
+            rainbow_auth_url, user_id
+        );
+        let permissions_response = self
+            .http_client
             .get(&permissions_url)
             .header("Authorization", format!("Bearer {}", token))
             .send()
             .await
-            .map_err(|_| AppError::Authentication("Failed to fetch user permissions".to_string()))?;
+            .map_err(|_| {
+                AppError::Authentication("Failed to fetch user permissions".to_string())
+            })?;
 
         let permissions = if permissions_response.status().is_success() {
-            match permissions_response.json::<ApiResponse<Vec<String>>>().await {
+            match permissions_response
+                .json::<ApiResponse<Vec<String>>>()
+                .await
+            {
                 Ok(resp) => {
                     if resp.success {
                         resp.data.unwrap_or_else(|| vec!["docs.read".to_string()])
@@ -293,13 +323,22 @@ impl AuthService {
         Ok((roles, permissions))
     }
 
-    pub async fn check_permission(&self, user_id: &str, permission: &str, resource_id: Option<&str>) -> Result<bool> {
+    pub async fn check_permission(
+        &self,
+        user_id: &str,
+        permission: &str,
+        resource_id: Option<&str>,
+    ) -> Result<bool> {
         if !self.config.auth.integration_mode {
             // 独立模式：简单权限检查
-            debug!("Independent mode: Checking permission {} for user {} on resource {:?}", permission, user_id, resource_id);
+            debug!(
+                "Independent mode: Checking permission {} for user {} on resource {:?}",
+                permission, user_id, resource_id
+            );
             return match permission {
                 "docs.read" | "docs.comment.read" | "spaces.read" => Ok(true),
-                "docs.write" | "docs.create" | "docs.update" | "docs.comment.write" | "spaces.write" | "spaces.create" => Ok(true),
+                "docs.write" | "docs.create" | "docs.update" | "docs.comment.write"
+                | "spaces.write" | "spaces.create" => Ok(true),
                 "docs.delete" => Ok(true),
                 _ => Ok(false),
             };
@@ -308,18 +347,22 @@ impl AuthService {
         // 检查权限缓存
         let cache_key = format!("{}:{}", user_id, permission);
         if let Some(cached_permission) = self.get_cached_permission(&cache_key).await {
-            debug!("Using cached permission for {}: {}", cache_key, cached_permission);
+            debug!(
+                "Using cached permission for {}: {}",
+                cache_key, cached_permission
+            );
             return Ok(cached_permission);
         }
 
         // 如果没有Rainbow-Auth集成，使用简单权限检查
         let has_permission = match permission {
             "docs.read" | "docs.comment.read" | "spaces.read" => true,
-            "docs.write" | "docs.create" | "docs.update" | "docs.comment.write" | "spaces.write" | "spaces.create" => true,
+            "docs.write" | "docs.create" | "docs.update" | "docs.comment.write"
+            | "spaces.write" | "spaces.create" => true,
             "docs.delete" => true,
             _ => false,
         };
-        
+
         // 缓存权限结果
         self.cache_permission(&cache_key, has_permission).await;
 
@@ -338,40 +381,48 @@ impl AuthService {
 
     async fn cache_permission(&self, cache_key: &str, has_permission: bool) {
         let mut cache = self.permission_cache.write().await;
-        cache.insert(cache_key.to_string(), CachedPermission {
-            has_permission,
-            expires_at: Utc::now() + Duration::minutes(10), // 权限缓存10分钟
-        });
+        cache.insert(
+            cache_key.to_string(),
+            CachedPermission {
+                has_permission,
+                expires_at: Utc::now() + Duration::minutes(10), // 权限缓存10分钟
+            },
+        );
     }
 
     // 批量权限检查
-    pub async fn check_multiple_permissions(&self, user_id: &str, permissions: &[&str], token: &str) -> Result<HashMap<String, bool>> {
+    pub async fn check_multiple_permissions(
+        &self,
+        user_id: &str,
+        permissions: &[&str],
+        token: &str,
+    ) -> Result<HashMap<String, bool>> {
         let mut results = HashMap::new();
-        
+
         for permission in permissions {
             let has_permission = self.check_permission(user_id, permission, None).await?;
             results.insert(permission.to_string(), has_permission);
         }
-        
+
         Ok(results)
     }
 
     // 清理过期缓存
     pub async fn cleanup_cache(&self) {
         let now = Utc::now();
-        
+
         // 清理用户缓存
         {
             let mut user_cache = self.user_cache.write().await;
             user_cache.retain(|_, cached| cached.expires_at > now);
         }
-        
-        // 清理权限缓存  
+
+        // 清理权限缓存
         {
             let mut permission_cache = self.permission_cache.write().await;
             permission_cache.retain(|_, cached| cached.expires_at > now);
         }
-        
+
         debug!("Cache cleanup completed");
     }
 }
@@ -402,14 +453,21 @@ where
 
         // Get user details from Rainbow-Auth if integration is enabled
         if auth_service.config.auth.integration_mode {
-            auth_service.get_user_from_rainbow_auth(&claims.sub, bearer.token()).await
+            auth_service
+                .get_user_from_rainbow_auth(&claims.sub, bearer.token())
+                .await
         } else {
             // Standalone mode: create user from JWT claims with default values
             Ok(User {
                 id: claims.sub,
                 email: "unknown@example.com".to_string(), // 默认邮箱，因为JWT中没有
-                roles: vec!["user".to_string()], // 默认角色
-                permissions: vec!["docs.read".to_string(), "docs.write".to_string(), "spaces.read".to_string(), "spaces.write".to_string()], // 默认权限
+                roles: vec!["user".to_string()],          // 默认角色
+                permissions: vec![
+                    "docs.read".to_string(),
+                    "docs.write".to_string(),
+                    "spaces.read".to_string(),
+                    "spaces.write".to_string(),
+                ], // 默认权限
                 profile: None,
             })
         }

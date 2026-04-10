@@ -1,9 +1,9 @@
-use serde::{Deserialize, Serialize};
-use chrono::{DateTime, Utc};
-use std::collections::HashMap;
-use validator::Validate;
-use surrealdb::types::RecordId as Thing;
 use crate::services::database::{record_id_key, record_id_to_string};
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use surrealdb::types::RecordId as Thing;
+use validator::Validate;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Document {
@@ -74,13 +74,24 @@ impl Default for SeoMetadata {
 
 #[derive(Debug, Serialize, Deserialize, Validate)]
 pub struct CreateDocumentRequest {
-    #[validate(length(min = 1, max = 200, message = "Title must be between 1 and 200 characters"))]
+    #[validate(length(
+        min = 1,
+        max = 200,
+        message = "Title must be between 1 and 200 characters"
+    ))]
     pub title: String,
-    
-    #[validate(length(min = 1, max = 100, message = "Slug must be between 1 and 100 characters"))]
-    #[validate(regex(path = "crate::models::document::SLUG_REGEX", message = "Slug can only contain lowercase letters, numbers, and hyphens"))]
+
+    #[validate(length(
+        min = 1,
+        max = 100,
+        message = "Slug must be between 1 and 100 characters"
+    ))]
+    #[validate(regex(
+        path = "crate::models::document::SLUG_REGEX",
+        message = "Slug can only contain lowercase letters, numbers, and hyphens"
+    ))]
     pub slug: String,
-    
+
     pub content: Option<String>,
     pub excerpt: Option<String>,
     pub is_public: Option<bool>,
@@ -91,9 +102,13 @@ pub struct CreateDocumentRequest {
 
 #[derive(Debug, Serialize, Deserialize, Validate)]
 pub struct UpdateDocumentRequest {
-    #[validate(length(min = 1, max = 200, message = "Title must be between 1 and 200 characters"))]
+    #[validate(length(
+        min = 1,
+        max = 200,
+        message = "Title must be between 1 and 200 characters"
+    ))]
     pub title: Option<String>,
-    
+
     pub content: Option<String>,
     pub excerpt: Option<String>,
     pub is_public: Option<bool>,
@@ -202,12 +217,7 @@ lazy_static::lazy_static! {
 }
 
 impl Document {
-    pub fn new(
-        space_id: String,
-        title: String,
-        slug: String,
-        author_id: String,
-    ) -> Self {
+    pub fn new(space_id: String, title: String, slug: String, author_id: String) -> Self {
         Self {
             id: None,
             space_id,
@@ -448,7 +458,9 @@ mod tests {
 
         // Test with content
         doc.excerpt = None;
-        doc.content = "This is a long content that should be truncated when generating an excerpt. ".repeat(10);
+        doc.content =
+            "This is a long content that should be truncated when generating an excerpt. "
+                .repeat(10);
         let excerpt = doc.generate_excerpt();
         assert!(excerpt.len() <= 150);
         assert!(excerpt.ends_with("..."));

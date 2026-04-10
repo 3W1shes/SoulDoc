@@ -10,34 +10,34 @@ use thiserror::Error;
 pub enum AppError {
     #[error("Database error: {0}")]
     Database(#[from] surrealdb::Error),
-    
+
     #[error("Authentication error: {0}")]
     Authentication(String),
-    
+
     #[error("Authorization error: {0}")]
     Authorization(String),
-    
+
     #[error("Validation error: {0}")]
     Validation(String),
-    
+
     #[error("Not found: {0}")]
     NotFound(String),
-    
+
     #[error("Conflict: {0}")]
     Conflict(String),
-    
+
     #[error("Internal server error: {0}")]
     Internal(#[from] anyhow::Error),
-    
+
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
-    
+
     #[error("JWT error: {0}")]
     Jwt(#[from] jsonwebtoken::errors::Error),
-    
+
     #[error("HTTP client error: {0}")]
     Http(#[from] reqwest::Error),
-    
+
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 
@@ -147,23 +147,23 @@ impl AppError {
     pub fn bad_request(msg: impl Into<String>) -> Self {
         Self::Validation(msg.into())
     }
-    
+
     pub fn unauthorized(msg: impl Into<String>) -> Self {
         Self::Authentication(msg.into())
     }
-    
+
     pub fn forbidden(msg: impl Into<String>) -> Self {
         Self::Authorization(msg.into())
     }
-    
+
     pub fn not_found(msg: impl Into<String>) -> Self {
         Self::NotFound(msg.into())
     }
-    
+
     pub fn conflict(msg: impl Into<String>) -> Self {
         Self::Conflict(msg.into())
     }
-    
+
     pub fn internal_server_error(msg: impl Into<String>) -> Self {
         Self::Internal(anyhow::anyhow!(msg.into()))
     }

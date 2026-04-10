@@ -1,13 +1,17 @@
-use crate::{AppState, error::{AppError, Result}};
-use crate::models::space_member::{InviteMemberRequest, UpdateMemberRequest, AcceptInvitationRequest};
+use crate::models::space_member::{
+    AcceptInvitationRequest, InviteMemberRequest, UpdateMemberRequest,
+};
 use crate::services::auth::User;
+use crate::{
+    error::{AppError, Result},
+    AppState,
+};
 use axum::{
     extract::{Path, State},
     http::StatusCode,
     response::Json,
-    routing::{get, post, put, delete},
-    Router,
-    Extension,
+    routing::{delete, get, post, put},
+    Extension, Router,
 };
 use serde_json::{json, Value};
 use std::sync::Arc;
@@ -17,7 +21,10 @@ pub fn router() -> Router {
     Router::new()
         .route("/:space_slug/members", get(list_members))
         .route("/:space_slug/invite", post(invite_member))
-        .route("/:space_slug/members/:user_id", put(update_member).delete(remove_member))
+        .route(
+            "/:space_slug/members/:user_id",
+            put(update_member).delete(remove_member),
+        )
         .route("/invitations/accept", post(accept_invitation))
 }
 
@@ -29,9 +36,15 @@ async fn list_members(
     user: User,
 ) -> Result<Json<Value>> {
     // 获取space_id
-    let space = app_state.space_service.get_space_by_slug(&space_slug, Some(&user)).await?;
-    
-    let members = app_state.space_member_service.list_space_members(&space.id, &user).await?;
+    let space = app_state
+        .space_service
+        .get_space_by_slug(&space_slug, Some(&user))
+        .await?;
+
+    let members = app_state
+        .space_member_service
+        .list_space_members(&space.id, &user)
+        .await?;
 
     Ok(Json(json!({
         "success": true,
@@ -49,11 +62,20 @@ async fn invite_member(
     Json(request): Json<InviteMemberRequest>,
 ) -> Result<Json<Value>> {
     // 获取space_id
-    let space = app_state.space_service.get_space_by_slug(&space_slug, Some(&user)).await?;
-    
-    let invitation = app_state.space_member_service.invite_member(&space.id, &user, request).await?;
+    let space = app_state
+        .space_service
+        .get_space_by_slug(&space_slug, Some(&user))
+        .await?;
 
-    info!("User {} invited new member to space: {}", user.id, space_slug);
+    let invitation = app_state
+        .space_member_service
+        .invite_member(&space.id, &user, request)
+        .await?;
+
+    info!(
+        "User {} invited new member to space: {}",
+        user.id, space_slug
+    );
 
     Ok(Json(json!({
         "success": true,
@@ -69,7 +91,10 @@ async fn accept_invitation(
     user: User,
     Json(request): Json<AcceptInvitationRequest>,
 ) -> Result<Json<Value>> {
-    let member = app_state.space_member_service.accept_invitation(&user.id, request).await?;
+    let member = app_state
+        .space_member_service
+        .accept_invitation(&user.id, request)
+        .await?;
 
     info!("User {} accepted invitation to space", user.id);
 
@@ -89,11 +114,20 @@ async fn update_member(
     Json(request): Json<UpdateMemberRequest>,
 ) -> Result<Json<Value>> {
     // 获取space_id
-    let space = app_state.space_service.get_space_by_slug(&space_slug, Some(&user)).await?;
-    
-    let updated_member = app_state.space_member_service.update_member(&space.id, &member_user_id, &user, request).await?;
+    let space = app_state
+        .space_service
+        .get_space_by_slug(&space_slug, Some(&user))
+        .await?;
 
-    info!("User {} updated member {} in space: {}", user.id, member_user_id, space_slug);
+    let updated_member = app_state
+        .space_member_service
+        .update_member(&space.id, &member_user_id, &user, request)
+        .await?;
+
+    info!(
+        "User {} updated member {} in space: {}",
+        user.id, member_user_id, space_slug
+    );
 
     Ok(Json(json!({
         "success": true,
@@ -110,11 +144,20 @@ async fn remove_member(
     user: User,
 ) -> Result<Json<Value>> {
     // 获取space_id
-    let space = app_state.space_service.get_space_by_slug(&space_slug, Some(&user)).await?;
-    
-    app_state.space_member_service.remove_member(&space.id, &member_user_id, &user).await?;
+    let space = app_state
+        .space_service
+        .get_space_by_slug(&space_slug, Some(&user))
+        .await?;
 
-    info!("User {} removed member {} from space: {}", user.id, member_user_id, space_slug);
+    app_state
+        .space_member_service
+        .remove_member(&space.id, &member_user_id, &user)
+        .await?;
+
+    info!(
+        "User {} removed member {} from space: {}",
+        user.id, member_user_id, space_slug
+    );
 
     Ok(Json(json!({
         "success": true,
@@ -127,7 +170,7 @@ async fn remove_member(
 mod tests {
     use super::*;
     use crate::models::space_member::{InviteMemberRequest, MemberRole};
-    
+
     #[test]
     fn test_invite_member_validation() {
         let valid_request = InviteMemberRequest {
@@ -137,9 +180,9 @@ mod tests {
             message: Some("Welcome to our space!".to_string()),
             expires_in_days: Some(7),
         };
-        
+
         assert!(valid_request.validate().is_ok());
-        
+
         let invalid_request = InviteMemberRequest {
             email: Some("invalid-email".to_string()), // 无效邮箱格式
             user_id: None,
@@ -147,7 +190,7 @@ mod tests {
             message: None,
             expires_in_days: Some(7),
         };
-        
+
         assert!(invalid_request.validate().is_err());
     }
 }

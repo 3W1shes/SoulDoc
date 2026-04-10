@@ -1,16 +1,15 @@
 use crate::{
-    AppState,
     error::{AppError, Result},
     models::publication::*,
     services::auth::User,
+    AppState,
 };
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
     response::Json,
-    routing::{get, post, put, delete},
-    Router,
-    Extension,
+    routing::{delete, get, post, put},
+    Extension, Router,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -23,15 +22,25 @@ pub fn router() -> Router {
         // 管理端点（需要认证）
         .route("/spaces/:space_id/publish", post(publish_space))
         .route("/spaces/:space_id/publications", get(list_publications))
-        .route("/publications/:publication_id", put(update_publication).delete(delete_publication))
+        .route(
+            "/publications/:publication_id",
+            put(update_publication).delete(delete_publication),
+        )
         .route("/publications/:publication_id/republish", post(republish))
         .route("/publications/:publication_id/unpublish", post(unpublish))
-        
         // 预览端点（需要认证）
-        .route("/publications/:publication_id", get(get_publication_preview))
-        .route("/publications/:publication_id/tree", get(get_publication_tree_preview))
-        .route("/publications/:publication_id/docs/:doc_slug", get(get_publication_document_preview))
-        
+        .route(
+            "/publications/:publication_id",
+            get(get_publication_preview),
+        )
+        .route(
+            "/publications/:publication_id/tree",
+            get(get_publication_tree_preview),
+        )
+        .route(
+            "/publications/:publication_id/docs/:doc_slug",
+            get(get_publication_document_preview),
+        )
         // 公开访问端点（无需认证）
         .route("/p/:slug", get(get_publication))
         .route("/p/:slug/tree", get(get_publication_tree))
@@ -48,29 +57,46 @@ async fn publish_space(
 ) -> Result<Json<Value>> {
     // 处理space_id格式 - 移除"space:"前缀如果存在
     let clean_space_id = space_id.strip_prefix("space:").unwrap_or(&space_id);
-    
+
     // 检查用户是否有权限发布此空间
-    let space = app_state.space_service.get_space_by_id(clean_space_id, Some(&user)).await?;
-    
+    let space = app_state
+        .space_service
+        .get_space_by_id(clean_space_id, Some(&user))
+        .await?;
+
     // 检查空间访问权限
-    if !app_state.space_member_service.can_access_space(&space.id, Some(&user.id)).await? {
-        return Err(AppError::Authorization("Access denied to this space".to_string()));
+    if !app_state
+        .space_member_service
+        .can_access_space(&space.id, Some(&user.id))
+        .await?
+    {
+        return Err(AppError::Authorization(
+            "Access denied to this space".to_string(),
+        ));
     }
-    
+
     // 检查发布权限（需要admin或owner角色）
     // 由于owner自动拥有所有权限，这里只需要检查一个高级权限
-    if !app_state.space_member_service.check_permission(&space.id, &user.id, "spaces.manage").await? {
-        return Err(AppError::Authorization("Only space owners and admins can publish".to_string()));
+    if !app_state
+        .space_member_service
+        .check_permission(&space.id, &user.id, "spaces.manage")
+        .await?
+    {
+        return Err(AppError::Authorization(
+            "Only space owners and admins can publish".to_string(),
+        ));
     }
 
     // 创建发布
-    let result = app_state.publication_service.create_publication(
-        &space.id,
-        &user.id,
-        request,
-    ).await?;
+    let result = app_state
+        .publication_service
+        .create_publication(&space.id, &user.id, request)
+        .await?;
 
-    info!("User {} published space {} as {}", user.id, space_id, result.slug);
+    info!(
+        "User {} published space {} as {}",
+        user.id, space_id, result.slug
+    );
 
     Ok(Json(json!({
         "success": true,
@@ -88,20 +114,32 @@ async fn list_publications(
     user: User,
 ) -> Result<Json<Value>> {
     info!("list_publications called with space_id: {}", space_id);
-    
+
     // 处理space_id格式 - 移除"space:"前缀如果存在
     let clean_space_id = space_id.strip_prefix("space:").unwrap_or(&space_id);
     info!("clean_space_id: {}", clean_space_id);
-    
+
     // 检查用户是否有权限查看此空间
-    let space = app_state.space_service.get_space_by_id(clean_space_id, Some(&user)).await?;
-    
-    if !app_state.space_member_service.can_access_space(&space.id, Some(&user.id)).await? {
-        return Err(AppError::Authorization("Access denied to this space".to_string()));
+    let space = app_state
+        .space_service
+        .get_space_by_id(clean_space_id, Some(&user))
+        .await?;
+
+    if !app_state
+        .space_member_service
+        .can_access_space(&space.id, Some(&user.id))
+        .await?
+    {
+        return Err(AppError::Authorization(
+            "Access denied to this space".to_string(),
+        ));
     }
 
     let include_inactive = params.include_inactive.unwrap_or(false);
-    let result = app_state.publication_service.list_publications(&space.id, include_inactive).await?;
+    let result = app_state
+        .publication_service
+        .list_publications(&space.id, include_inactive)
+        .await?;
 
     Ok(Json(json!({
         "success": true,
@@ -119,18 +157,26 @@ async fn update_publication(
     Json(request): Json<UpdatePublicationRequest>,
 ) -> Result<Json<Value>> {
     // 获取发布信息以检查权限
-    let publication = app_state.publication_service.get_publication_by_id(&publication_id).await?;
-    
+    let publication = app_state
+        .publication_service
+        .get_publication_by_id(&publication_id)
+        .await?;
+
     // 检查用户权限
-    if !app_state.space_member_service.check_permission(&publication.space_id, &user.id, "spaces.manage").await? {
-        return Err(AppError::Authorization("Only space owners and admins can update publications".to_string()));
+    if !app_state
+        .space_member_service
+        .check_permission(&publication.space_id, &user.id, "spaces.manage")
+        .await?
+    {
+        return Err(AppError::Authorization(
+            "Only space owners and admins can update publications".to_string(),
+        ));
     }
 
-    let result = app_state.publication_service.update_publication(
-        &publication_id,
-        &user.id,
-        request,
-    ).await?;
+    let result = app_state
+        .publication_service
+        .update_publication(&publication_id, &user.id, request)
+        .await?;
 
     info!("User {} updated publication {}", user.id, publication_id);
 
@@ -150,20 +196,31 @@ async fn republish(
     Json(request): Json<RepublishRequest>,
 ) -> Result<Json<Value>> {
     // 获取发布信息以检查权限
-    let publication = app_state.publication_service.get_publication_by_id(&publication_id).await?;
-    
+    let publication = app_state
+        .publication_service
+        .get_publication_by_id(&publication_id)
+        .await?;
+
     // 检查用户权限
-    if !app_state.space_member_service.check_permission(&publication.space_id, &user.id, "spaces.manage").await? {
-        return Err(AppError::Authorization("Only space owners and admins can republish".to_string()));
+    if !app_state
+        .space_member_service
+        .check_permission(&publication.space_id, &user.id, "spaces.manage")
+        .await?
+    {
+        return Err(AppError::Authorization(
+            "Only space owners and admins can republish".to_string(),
+        ));
     }
 
-    let result = app_state.publication_service.republish(
-        &publication_id,
-        &user.id,
-        request.change_summary,
-    ).await?;
+    let result = app_state
+        .publication_service
+        .republish(&publication_id, &user.id, request.change_summary)
+        .await?;
 
-    info!("User {} republished {} (v{})", user.id, result.slug, result.version);
+    info!(
+        "User {} republished {} (v{})",
+        user.id, result.slug, result.version
+    );
 
     Ok(Json(json!({
         "success": true,
@@ -180,16 +237,31 @@ async fn unpublish(
     user: User,
 ) -> Result<Json<Value>> {
     // 获取发布信息以检查权限
-    let publication = app_state.publication_service.get_publication_by_id(&publication_id).await?;
-    
+    let publication = app_state
+        .publication_service
+        .get_publication_by_id(&publication_id)
+        .await?;
+
     // 检查用户权限
-    if !app_state.space_member_service.check_permission(&publication.space_id, &user.id, "spaces.manage").await? {
-        return Err(AppError::Authorization("Only space owners and admins can unpublish".to_string()));
+    if !app_state
+        .space_member_service
+        .check_permission(&publication.space_id, &user.id, "spaces.manage")
+        .await?
+    {
+        return Err(AppError::Authorization(
+            "Only space owners and admins can unpublish".to_string(),
+        ));
     }
 
-    app_state.publication_service.unpublish(&publication_id).await?;
+    app_state
+        .publication_service
+        .unpublish(&publication_id)
+        .await?;
 
-    info!("User {} unpublished publication {}", user.id, publication_id);
+    info!(
+        "User {} unpublished publication {}",
+        user.id, publication_id
+    );
 
     Ok(Json(json!({
         "success": true,
@@ -206,15 +278,27 @@ async fn delete_publication(
     user: User,
 ) -> Result<Json<Value>> {
     // 获取发布信息以检查权限
-    let publication = app_state.publication_service.get_publication_by_id(&publication_id).await?;
-    
+    let publication = app_state
+        .publication_service
+        .get_publication_by_id(&publication_id)
+        .await?;
+
     // 检查用户权限（只有owner可以删除）
     // 先检查是否有管理权限
-    if !app_state.space_member_service.check_permission(&publication.space_id, &user.id, "spaces.manage").await? {
-        return Err(AppError::Authorization("Only space owners can delete publications".to_string()));
+    if !app_state
+        .space_member_service
+        .check_permission(&publication.space_id, &user.id, "spaces.manage")
+        .await?
+    {
+        return Err(AppError::Authorization(
+            "Only space owners can delete publications".to_string(),
+        ));
     }
 
-    app_state.publication_service.delete_publication(&publication_id).await?;
+    app_state
+        .publication_service
+        .delete_publication(&publication_id)
+        .await?;
 
     info!("User {} deleted publication {}", user.id, publication_id);
 
@@ -235,11 +319,20 @@ async fn get_publication_preview(
     user: User,
 ) -> Result<Json<Value>> {
     // 获取发布信息
-    let publication = app_state.publication_service.get_publication_by_id(&publication_id).await?;
-    
+    let publication = app_state
+        .publication_service
+        .get_publication_by_id(&publication_id)
+        .await?;
+
     // 检查用户权限
-    if !app_state.space_member_service.can_access_space(&publication.space_id, Some(&user.id)).await? {
-        return Err(AppError::Authorization("Access denied to this publication".to_string()));
+    if !app_state
+        .space_member_service
+        .can_access_space(&publication.space_id, Some(&user.id))
+        .await?
+    {
+        return Err(AppError::Authorization(
+            "Access denied to this publication".to_string(),
+        ));
     }
 
     // 构建发布信息（包含所有字段，用于预览）
@@ -277,15 +370,27 @@ async fn get_publication_tree_preview(
     user: User,
 ) -> Result<Json<Value>> {
     // 获取发布信息以检查权限
-    let publication = app_state.publication_service.get_publication_by_id(&publication_id).await?;
-    
+    let publication = app_state
+        .publication_service
+        .get_publication_by_id(&publication_id)
+        .await?;
+
     // 检查用户权限
-    if !app_state.space_member_service.can_access_space(&publication.space_id, Some(&user.id)).await? {
-        return Err(AppError::Authorization("Access denied to this publication".to_string()));
+    if !app_state
+        .space_member_service
+        .can_access_space(&publication.space_id, Some(&user.id))
+        .await?
+    {
+        return Err(AppError::Authorization(
+            "Access denied to this publication".to_string(),
+        ));
     }
 
-    let tree = app_state.publication_service.get_publication_tree(&publication_id).await?;
-    
+    let tree = app_state
+        .publication_service
+        .get_publication_tree(&publication_id)
+        .await?;
+
     Ok(Json(json!({
         "success": true,
         "data": tree,
@@ -301,15 +406,27 @@ async fn get_publication_document_preview(
     user: User,
 ) -> Result<Json<Value>> {
     // 获取发布信息以检查权限
-    let publication = app_state.publication_service.get_publication_by_id(&publication_id).await?;
-    
+    let publication = app_state
+        .publication_service
+        .get_publication_by_id(&publication_id)
+        .await?;
+
     // 检查用户权限
-    if !app_state.space_member_service.can_access_space(&publication.space_id, Some(&user.id)).await? {
-        return Err(AppError::Authorization("Access denied to this publication".to_string()));
+    if !app_state
+        .space_member_service
+        .can_access_space(&publication.space_id, Some(&user.id))
+        .await?
+    {
+        return Err(AppError::Authorization(
+            "Access denied to this publication".to_string(),
+        ));
     }
 
-    let document = app_state.publication_service.get_publication_document(&publication_id, &doc_slug).await?;
-    
+    let document = app_state
+        .publication_service
+        .get_publication_document(&publication_id, &doc_slug)
+        .await?;
+
     Ok(Json(json!({
         "success": true,
         "data": document,
@@ -325,8 +442,11 @@ async fn get_publication(
     Extension(app_state): Extension<Arc<AppState>>,
     Path(slug): Path<String>,
 ) -> Result<Json<Value>> {
-    let publication = app_state.publication_service.get_publication_by_slug(&slug).await?;
-    
+    let publication = app_state
+        .publication_service
+        .get_publication_by_slug(&slug)
+        .await?;
+
     // 构建公开的发布信息
     let public_info = json!({
         "slug": publication.slug,
@@ -360,18 +480,26 @@ async fn get_publication_tree(
     Path(slug): Path<String>,
 ) -> Result<Json<Value>> {
     // 先获取发布信息
-    let publication = app_state.publication_service.get_publication_by_slug(&slug).await?;
-    
+    let publication = app_state
+        .publication_service
+        .get_publication_by_slug(&slug)
+        .await?;
+
     if let Some(pub_id) = &publication.id {
-        let tree = app_state.publication_service.get_publication_tree(pub_id).await?;
-        
+        let tree = app_state
+            .publication_service
+            .get_publication_tree(pub_id)
+            .await?;
+
         Ok(Json(json!({
             "success": true,
             "data": tree,
             "message": "Document tree retrieved successfully"
         })))
     } else {
-        Err(AppError::Internal(anyhow::anyhow!("Publication ID is missing")))
+        Err(AppError::Internal(anyhow::anyhow!(
+            "Publication ID is missing"
+        )))
     }
 }
 
@@ -382,23 +510,34 @@ async fn get_publication_document(
     Path((slug, doc_slug)): Path<(String, String)>,
 ) -> Result<Json<Value>> {
     // 先获取发布信息
-    let publication = app_state.publication_service.get_publication_by_slug(&slug).await?;
-    
+    let publication = app_state
+        .publication_service
+        .get_publication_by_slug(&slug)
+        .await?;
+
     if let Some(pub_id) = &publication.id {
-        let document = app_state.publication_service.get_publication_document(pub_id, &doc_slug).await?;
-        
+        let document = app_state
+            .publication_service
+            .get_publication_document(pub_id, &doc_slug)
+            .await?;
+
         // 记录访问统计
         if let Some(doc_id) = &document.id {
-            let _ = app_state.publication_service.track_document_view(pub_id, doc_id).await;
+            let _ = app_state
+                .publication_service
+                .track_document_view(pub_id, doc_id)
+                .await;
         }
-        
+
         Ok(Json(json!({
             "success": true,
             "data": document,
             "message": "Document retrieved successfully"
         })))
     } else {
-        Err(AppError::Internal(anyhow::anyhow!("Publication ID is missing")))
+        Err(AppError::Internal(anyhow::anyhow!(
+            "Publication ID is missing"
+        )))
     }
 }
 

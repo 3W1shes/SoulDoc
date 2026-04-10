@@ -1,12 +1,11 @@
-use crate::{AppState, error::Result};
 use crate::models::notification::NotificationListQuery;
 use crate::services::auth::User;
+use crate::{error::Result, AppState};
 use axum::{
     extract::{Path, Query, State},
     response::Json,
-    routing::{get, post, put, delete},
-    Router,
-    Extension,
+    routing::{delete, get, post, put},
+    Extension, Router,
 };
 use serde_json::{json, Value};
 use std::sync::Arc;
@@ -16,7 +15,10 @@ pub fn router() -> Router {
     Router::new()
         .route("/", get(list_notifications))
         .route("/unread-count", get(get_unread_count))
-        .route("/:notification_id", put(mark_as_read).delete(delete_notification))
+        .route(
+            "/:notification_id",
+            put(mark_as_read).delete(delete_notification),
+        )
         .route("/mark-all-read", post(mark_all_as_read))
 }
 
@@ -88,7 +90,10 @@ async fn mark_as_read(
         .mark_as_read(&user.id, &notification_id)
         .await?;
 
-    info!("User {} marked notification {} as read", user.id, notification_id);
+    info!(
+        "User {} marked notification {} as read",
+        user.id, notification_id
+    );
 
     Ok(Json(json!({
         "success": true,

@@ -1,15 +1,15 @@
 use crate::config::Config;
 use crate::error::{AppError, Result};
-use serde::{Deserialize, Serialize};
 use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Number, Value as JsonValue};
 use std::any::TypeId;
-use std::sync::Arc;
-use std::pin::Pin;
 use std::future::Future;
-use surrealdb::IndexedResults;
-use tracing::{info, error};
+use std::pin::Pin;
+use std::sync::Arc;
 use surrealdb::types::{RecordId as Thing, RecordIdKey};
+use surrealdb::IndexedResults;
+use tracing::{error, info};
 
 /// 客户端包装器，提供完全兼容的 SurrealDB API
 #[derive(Clone)]
@@ -72,7 +72,10 @@ impl Response {
         Self { inner }
     }
 
-    pub fn take<T: DeserializeOwned + 'static>(&mut self, index: impl Into<TakeIndex>) -> std::result::Result<T, surrealdb::Error> {
+    pub fn take<T: DeserializeOwned + 'static>(
+        &mut self,
+        index: impl Into<TakeIndex>,
+    ) -> std::result::Result<T, surrealdb::Error> {
         match index.into() {
             TakeIndex::Statement(idx) => {
                 let raw: surrealdb::types::Value = self.inner.take(idx)?;
@@ -88,10 +91,13 @@ impl Response {
     }
 }
 
-fn decode_take_value<T: DeserializeOwned + 'static>(json_raw: JsonValue) -> std::result::Result<T, surrealdb::Error> {
+fn decode_take_value<T: DeserializeOwned + 'static>(
+    json_raw: JsonValue,
+) -> std::result::Result<T, surrealdb::Error> {
     // Keep original payload for callers explicitly asking for JSON.
     if TypeId::of::<T>() == TypeId::of::<JsonValue>() {
-        return serde_json::from_value(json_raw).map_err(|e| surrealdb::Error::thrown(e.to_string()));
+        return serde_json::from_value(json_raw)
+            .map_err(|e| surrealdb::Error::thrown(e.to_string()));
     }
 
     let json = normalize_query_json(json_raw);
@@ -161,7 +167,9 @@ fn normalize_query_json(mut v: JsonValue) -> JsonValue {
 
 fn detag_surreal_json(v: JsonValue) -> JsonValue {
     match v {
-        JsonValue::Array(arr) => JsonValue::Array(arr.into_iter().map(detag_surreal_json).collect()),
+        JsonValue::Array(arr) => {
+            JsonValue::Array(arr.into_iter().map(detag_surreal_json).collect())
+        }
         JsonValue::Object(mut obj) => {
             // Surreal / soulcore may emit single-key tagged objects with variant key names.
             // Handle fuzzy matches first to avoid leaking tagged datetime/uuid payloads.
@@ -182,7 +190,9 @@ fn detag_surreal_json(v: JsonValue) -> JsonValue {
                 }
                 if key_lower == "array" {
                     return match raw {
-                        JsonValue::Array(arr) => JsonValue::Array(arr.into_iter().map(detag_surreal_json).collect()),
+                        JsonValue::Array(arr) => {
+                            JsonValue::Array(arr.into_iter().map(detag_surreal_json).collect())
+                        }
                         other => detag_surreal_json(other),
                     };
                 }
@@ -318,9 +328,12 @@ impl ClientWrapper {
     pub fn query(&self, sql: impl Into<String>) -> QueryBuilder {
         QueryBuilder::new(self.storage.clone(), sql.into())
     }
-    
+
     /// Select - 兼容原有API，直接返回Future
-    pub async fn select<T>(&self, resource: impl Into<ResourceId>) -> std::result::Result<T, surrealdb::Error>
+    pub async fn select<T>(
+        &self,
+        resource: impl Into<ResourceId>,
+    ) -> std::result::Result<T, surrealdb::Error>
     where
         T: for<'de> serde::Deserialize<'de> + Serialize + std::fmt::Debug,
     {
@@ -342,11 +355,9 @@ impl ClientWrapper {
                 let rows: Vec<serde_json::Value> = res
                     .take(0)
                     .map_err(|e| surrealdb::Error::thrown(e.to_string()))?;
-                let result: Option<serde_json::Value> = rows
-                    .into_iter()
-                    .next()
-                    .map(detag_surreal_json);
-                
+                let result: Option<serde_json::Value> =
+                    rows.into_iter().next().map(detag_surreal_json);
+
                 // 如果T是Option<U>，直接返回；否则尝试转换
                 serde_json::to_value(result)
                     .and_then(serde_json::from_value)
@@ -354,49 +365,52 @@ impl ClientWrapper {
             }
             ResourceId::Table(table) => {
                 // 表查询，返回 Vec<T>
-                let result: Vec<serde_json::Value> = self.storage.select(&table)
+                let result: Vec<serde_json::Value> = self
+                    .storage
+                    .select(&table)
                     .await
                     .map_err(|e| surrealdb::Error::thrown(e.to_string()))?;
-                let result: Vec<serde_json::Value> = result
-                    .into_iter()
-                    .map(detag_surreal_json)
-                    .collect();
-                
+                let result: Vec<serde_json::Value> =
+                    result.into_iter().map(detag_surreal_json).collect();
+
                 serde_json::to_value(result)
                     .and_then(serde_json::from_value)
                     .map_err(|e| surrealdb::Error::thrown(e.to_string()))
             }
         }
     }
-    
+
     /// Create - 返回兼容的builder
     pub fn create(&self, resource: impl Into<String>) -> CreateWrapper {
         CreateWrapper::new(self.storage.clone(), resource.into())
     }
-    
+
     /// Update - 返回兼容的builder  
     pub fn update(&self, resource: impl Into<ResourceId>) -> UpdateWrapper {
         UpdateWrapper::new(self.storage.clone(), resource.into())
     }
-    
+
     /// Delete - 直接执行
-    pub async fn delete<T>(&self, resource: impl Into<ResourceId>) -> std::result::Result<Option<T>, surrealdb::Error>
+    pub async fn delete<T>(
+        &self,
+        resource: impl Into<ResourceId>,
+    ) -> std::result::Result<Option<T>, surrealdb::Error>
     where
         T: for<'de> serde::Deserialize<'de> + std::fmt::Debug,
     {
         let resource_id = resource.into();
         let thing = match resource_id {
-            ResourceId::Record(table, id) => {
-                Thing::new(table, id)
-            }
+            ResourceId::Record(table, id) => Thing::new(table, id),
             _ => {
                 return Err(surrealdb::Error::thrown(
-                    "Delete requires a specific record ID".to_string()
+                    "Delete requires a specific record ID".to_string(),
                 ));
             }
         };
-        
-        let deleted: Option<serde_json::Value> = self.storage.delete(thing)
+
+        let deleted: Option<serde_json::Value> = self
+            .storage
+            .delete(thing)
             .await
             .map_err(|e| surrealdb::Error::thrown(e.to_string()))?;
 
@@ -474,9 +488,9 @@ impl QueryBuilder {
             bindings: Vec::new(),
         }
     }
-    
+
     // 灵活的bind方法，可以接受多种类型
-    pub fn bind<B>(mut self, binding: B) -> Self 
+    pub fn bind<B>(mut self, binding: B) -> Self
     where
         B: IntoBinding,
     {
@@ -520,19 +534,19 @@ impl IntoBinding for &std::collections::HashMap<String, serde_json::Value> {
     }
 }
 
-
 impl std::future::IntoFuture for QueryBuilder {
     type Output = std::result::Result<Response, surrealdb::Error>;
     type IntoFuture = Pin<Box<dyn Future<Output = Self::Output> + Send>>;
-    
+
     fn into_future(self) -> Self::IntoFuture {
         Box::pin(async move {
             let mut params = serde_json::Map::new();
             for (key, value) in self.bindings {
                 params.insert(key, value);
             }
-            
-            self.storage.query_with_params(&self.sql, serde_json::Value::Object(params))
+
+            self.storage
+                .query_with_params(&self.sql, serde_json::Value::Object(params))
                 .await
                 .map(Response::new)
                 .map_err(|e| surrealdb::Error::thrown(e.to_string()))
@@ -550,7 +564,7 @@ impl CreateWrapper {
     fn new(storage: Arc<soulcore::engines::storage::StorageEngine>, table: String) -> Self {
         Self { storage, table }
     }
-    
+
     /// content方法，能够处理引用和值
     pub fn content<T>(self, content: T) -> TypedCreateFuture<T>
     where
@@ -583,7 +597,6 @@ impl<T: Clone> ContentProvider<T> for &T {
     }
 }
 
-
 /// 有类型的Create Future
 pub struct TypedCreateFuture<T> {
     storage: Arc<soulcore::engines::storage::StorageEngine>,
@@ -597,13 +610,14 @@ where
 {
     type Output = std::result::Result<Vec<T>, surrealdb::Error>;
     type IntoFuture = Pin<Box<dyn Future<Output = Self::Output> + Send>>;
-    
+
     fn into_future(self) -> Self::IntoFuture {
         Box::pin(async move {
             let payload = serde_json::to_value(self.content)
                 .map_err(|e| surrealdb::Error::thrown(e.to_string()))?;
 
-            let created: Option<serde_json::Value> = self.storage
+            let created: Option<serde_json::Value> = self
+                .storage
                 .create(&self.table, payload)
                 .await
                 .map_err(|e| surrealdb::Error::thrown(e.to_string()))?;
@@ -629,7 +643,7 @@ impl UpdateWrapper {
     fn new(storage: Arc<soulcore::engines::storage::StorageEngine>, resource: ResourceId) -> Self {
         Self { storage, resource }
     }
-    
+
     /// content方法，能够处理引用和值
     pub fn content<T>(self, content: T) -> TypedUpdateFuture<T>
     where
@@ -656,24 +670,24 @@ where
 {
     type Output = std::result::Result<Option<T>, surrealdb::Error>;
     type IntoFuture = Pin<Box<dyn Future<Output = Self::Output> + Send>>;
-    
+
     fn into_future(self) -> Self::IntoFuture {
         Box::pin(async move {
             let thing = match self.resource {
-                ResourceId::Record(table, id) => {
-                    Thing::new(table, id)
-                }
+                ResourceId::Record(table, id) => Thing::new(table, id),
                 _ => {
                     return Err(surrealdb::Error::thrown(
-                        "Update requires a specific record ID".to_string()
+                        "Update requires a specific record ID".to_string(),
                     ));
                 }
             };
-            
+
             let payload = serde_json::to_value(self.content)
                 .map_err(|e| surrealdb::Error::thrown(e.to_string()))?;
 
-            let updated: Option<serde_json::Value> = self.storage.update(thing, payload)
+            let updated: Option<serde_json::Value> = self
+                .storage
+                .update(thing, payload)
                 .await
                 .map_err(|e| surrealdb::Error::thrown(e.to_string()))?;
 
@@ -713,7 +727,7 @@ impl Database {
             max_retries: 3,
             retry_delay_ms: 1000,
         };
-        
+
         // 创建soulcore存储引擎
         let storage = Arc::new(
             soulcore::engines::storage::StorageEngine::new(soulcore_config)
@@ -721,29 +735,33 @@ impl Database {
                 .map_err(|e| {
                     error!("Failed to create soulcore storage engine: {}", e);
                     AppError::Internal(anyhow::anyhow!("Database initialization failed: {}", e))
-                })?
+                })?,
         );
-        
+
         // 验证连接
-        let test_client = storage.get_connection().await
-            .map_err(|e| {
-                error!("Failed to get database connection: {}", e);
-                AppError::Internal(anyhow::anyhow!("Database connection failed: {}", e))
-            })?;
-        
-        test_client.verify_connection().await
-            .map_err(|e| {
-                error!("Failed to verify database connection: {}", e);
-                AppError::Internal(anyhow::anyhow!("Database connection verification failed: {}", e))
-            })?;
-        
-        info!("Successfully connected to SurrealDB via soulcore at {}", config.database.url);
-        
+        let test_client = storage.get_connection().await.map_err(|e| {
+            error!("Failed to get database connection: {}", e);
+            AppError::Internal(anyhow::anyhow!("Database connection failed: {}", e))
+        })?;
+
+        test_client.verify_connection().await.map_err(|e| {
+            error!("Failed to verify database connection: {}", e);
+            AppError::Internal(anyhow::anyhow!(
+                "Database connection verification failed: {}",
+                e
+            ))
+        })?;
+
+        info!(
+            "Successfully connected to SurrealDB via soulcore at {}",
+            config.database.url
+        );
+
         // 创建客户端包装器
         let client = ClientWrapper {
             storage: storage.clone(),
         };
-        
+
         Ok(Database {
             client,
             config: config.clone(),
@@ -753,30 +771,28 @@ impl Database {
 
     pub async fn verify_connection(&self) -> Result<()> {
         // 使用soulcore验证连接
-        let client = self.storage.get_connection().await
-            .map_err(|e| {
-                error!("Failed to get connection for verification: {}", e);
-                AppError::Internal(anyhow::anyhow!("Connection verification failed: {}", e))
-            })?;
-        
-        client.verify_connection().await
-            .map_err(|e| {
-                error!("Database connection verification failed: {}", e);
-                AppError::Internal(anyhow::anyhow!("Connection verification failed: {}", e))
-            })?;
-        
+        let client = self.storage.get_connection().await.map_err(|e| {
+            error!("Failed to get connection for verification: {}", e);
+            AppError::Internal(anyhow::anyhow!("Connection verification failed: {}", e))
+        })?;
+
+        client.verify_connection().await.map_err(|e| {
+            error!("Database connection verification failed: {}", e);
+            AppError::Internal(anyhow::anyhow!("Connection verification failed: {}", e))
+        })?;
+
         info!("Database connection verified successfully");
         Ok(())
     }
 
     pub async fn health_check(&self) -> Result<DatabaseHealth> {
         let start = std::time::Instant::now();
-        
+
         match self.verify_connection().await {
             Ok(_) => {
                 let response_time = start.elapsed();
                 let _pool_stats = self.storage.get_pool_stats();
-                
+
                 Ok(DatabaseHealth {
                     connected: true,
                     response_time_ms: response_time.as_millis() as u64,
@@ -793,17 +809,17 @@ impl Database {
             }
         }
     }
-    
+
     // 获取soulcore存储引擎（供需要高级功能的地方使用）
     pub fn storage(&self) -> &Arc<soulcore::engines::storage::StorageEngine> {
         &self.storage
     }
-    
+
     // 使用soulcore查询构建器
     pub fn query_builder(&self) -> soulcore::surrealdb::QueryBuilder {
         self.storage.query_builder()
     }
-    
+
     // 获取连接池统计
     pub fn get_pool_stats(&self) -> soulcore::surrealdb::connection_pool::PoolStats {
         self.storage.get_pool_stats()

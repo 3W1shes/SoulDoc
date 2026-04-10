@@ -1,7 +1,7 @@
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use surrealdb::types::{Datetime, RecordId as Thing};
 use validator::Validate;
-use regex::Regex;
 
 lazy_static::lazy_static! {
     static ref HEX_COLOR_REGEX: Regex = Regex::new(r"^#[0-9A-Fa-f]{6}$").unwrap();

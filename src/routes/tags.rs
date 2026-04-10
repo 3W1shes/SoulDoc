@@ -2,18 +2,20 @@ use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
     response::Json,
-    routing::{get, post, put, delete},
-    Extension,
-    Router,
+    routing::{delete, get, post, put},
+    Extension, Router,
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 use crate::{
     error::ApiError,
-    models::tag::{Tag, DocumentTag, CreateTagRequest, UpdateTagRequest, TagDocumentRequest},
+    models::tag::{CreateTagRequest, DocumentTag, Tag, TagDocumentRequest, UpdateTagRequest},
     services::database::record_id_to_string,
-    services::{auth::AuthService, tags::{TagService, TagStatistics}},
+    services::{
+        auth::AuthService,
+        tags::{TagService, TagStatistics},
+    },
 };
 
 #[derive(Deserialize)]
@@ -128,7 +130,7 @@ pub async fn get_tag(
     let tag_service = &app_state.tag_service;
     let auth_service = &app_state.auth_service;
     let tag = tag_service.get_tag(&tag_id).await?;
-    
+
     // 检查读取权限
     if let Some(space_id) = &tag.space_id {
         auth_service
@@ -152,11 +154,15 @@ pub async fn update_tag(
     let tag_service = &app_state.tag_service;
     let auth_service = &app_state.auth_service;
     let tag = tag_service.get_tag(&tag_id).await?;
-    
+
     // 检查更新权限
     if let Some(space_id) = &tag.space_id {
         auth_service
-            .check_permission(&user_id, "docs.tag.update", Some(&record_id_to_string(space_id)))
+            .check_permission(
+                &user_id,
+                "docs.tag.update",
+                Some(&record_id_to_string(space_id)),
+            )
             .await?;
     } else {
         auth_service
@@ -176,11 +182,15 @@ pub async fn delete_tag(
     let tag_service = &app_state.tag_service;
     let auth_service = &app_state.auth_service;
     let tag = tag_service.get_tag(&tag_id).await?;
-    
+
     // 检查删除权限
     if let Some(space_id) = &tag.space_id {
         auth_service
-            .check_permission(&user_id, "docs.tag.delete", Some(&record_id_to_string(space_id)))
+            .check_permission(
+                &user_id,
+                "docs.tag.delete",
+                Some(&record_id_to_string(space_id)),
+            )
             .await?;
     } else {
         auth_service
@@ -263,11 +273,8 @@ pub async fn get_document_tags(
         .await?;
 
     let tags = tag_service.get_document_tags(&document_id).await?;
-    
-    Ok(Json(DocumentTagsResponse {
-        document_id,
-        tags,
-    }))
+
+    Ok(Json(DocumentTagsResponse { document_id, tags }))
 }
 
 pub async fn get_documents_by_tag(
@@ -279,7 +286,7 @@ pub async fn get_documents_by_tag(
     let tag_service = &app_state.tag_service;
     let auth_service = &app_state.auth_service;
     let tag = tag_service.get_tag(&tag_id).await?;
-    
+
     // 检查标签读取权限
     if let Some(space_id) = &tag.space_id {
         auth_service
@@ -373,5 +380,8 @@ pub fn router() -> Router {
         .route("/:tag_id/documents", get(get_documents_by_tag))
         .route("/documents/tag", post(tag_document))
         .route("/documents/:document_id", get(get_document_tags))
-        .route("/documents/:document_id/tags/:tag_id", delete(untag_document))
+        .route(
+            "/documents/:document_id/tags/:tag_id",
+            delete(untag_document),
+        )
 }

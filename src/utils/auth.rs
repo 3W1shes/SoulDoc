@@ -1,7 +1,7 @@
 use crate::error::{AppError, Result};
-use crate::services::auth::{User, AuthService};
+use crate::services::auth::{AuthService, User};
 use axum::{
-    http::{StatusCode, HeaderMap},
+    http::{HeaderMap, StatusCode},
     response::Response,
 };
 use std::collections::HashSet;
@@ -19,25 +19,28 @@ pub fn has_role(user: &User, role: &str) -> bool {
 
 /// 管理员权限检查
 pub fn require_admin(user: &User) -> Result<()> {
-    if user.roles.contains(&"admin".to_string()) || 
-       user.permissions.contains(&"docs.admin".to_string()) {
+    if user.roles.contains(&"admin".to_string())
+        || user.permissions.contains(&"docs.admin".to_string())
+    {
         Ok(())
     } else {
-        Err(AppError::Authorization("Admin permission required".to_string()))
+        Err(AppError::Authorization(
+            "Admin permission required".to_string(),
+        ))
     }
 }
 
 /// 检查用户是否有文档读取权限
 pub fn can_read_document(user: &User) -> bool {
-    user.permissions.contains(&"docs.read".to_string()) ||
-    user.permissions.contains(&"docs.write".to_string()) ||
-    user.permissions.contains(&"docs.admin".to_string())
+    user.permissions.contains(&"docs.read".to_string())
+        || user.permissions.contains(&"docs.write".to_string())
+        || user.permissions.contains(&"docs.admin".to_string())
 }
 
 /// 检查用户是否有文档写入权限
 pub fn can_write_document(user: &User) -> bool {
-    user.permissions.contains(&"docs.write".to_string()) ||
-    user.permissions.contains(&"docs.admin".to_string())
+    user.permissions.contains(&"docs.write".to_string())
+        || user.permissions.contains(&"docs.admin".to_string())
 }
 
 /// 检查用户是否有文档管理权限
@@ -66,16 +69,12 @@ pub fn has_document_permission(
 ) -> bool {
     match permission {
         DocumentPermission::Read => {
-            can_read_document(user) || 
-            document_owner_id.map_or(false, |owner| user.id == owner)
+            can_read_document(user) || document_owner_id.map_or(false, |owner| user.id == owner)
         }
         DocumentPermission::Write => {
-            can_write_document(user) || 
-            document_owner_id.map_or(false, |owner| user.id == owner)
+            can_write_document(user) || document_owner_id.map_or(false, |owner| user.id == owner)
         }
-        DocumentPermission::Admin => {
-            can_admin_document(user)
-        }
+        DocumentPermission::Admin => can_admin_document(user),
     }
 }
 
@@ -90,18 +89,21 @@ pub async fn extract_user_from_header(
         .ok_or_else(|| AppError::unauthorized("Authorization header missing"))?;
 
     if !auth_header.starts_with("Bearer ") {
-        return Err(AppError::unauthorized("Invalid authorization header format"));
+        return Err(AppError::unauthorized(
+            "Invalid authorization header format",
+        ));
     }
 
     let token = &auth_header[7..]; // Remove "Bearer " prefix
-    
+
     // Validate token and extract user ID
-    let claims = auth_service.verify_jwt(token)
+    let claims = auth_service
+        .verify_jwt(token)
         .map_err(|_| AppError::unauthorized("Invalid token"))?;
-    
+
     // Extract user ID from claims
     let user_id = claims.sub;
-    
+
     Ok(user_id)
 }
 

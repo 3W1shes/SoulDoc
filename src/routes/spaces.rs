@@ -1,13 +1,15 @@
-use crate::{AppState, error::{AppError, Result}};
-use crate::models::space::{CreateSpaceRequest, UpdateSpaceRequest, SpaceListQuery};
-use crate::services::auth::{User, OptionalUser};
+use crate::models::space::{CreateSpaceRequest, SpaceListQuery, UpdateSpaceRequest};
+use crate::services::auth::{OptionalUser, User};
+use crate::{
+    error::{AppError, Result},
+    AppState,
+};
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
     response::Json,
-    routing::{get, post, put, delete},
-    Router,
-    Extension,
+    routing::{delete, get, post, put},
+    Extension, Router,
 };
 use serde_json::{json, Value};
 use std::sync::Arc;
@@ -18,7 +20,10 @@ pub fn router() -> Router {
         .route("/", get(list_spaces).post(create_space))
         .route("/create", post(handle_legacy_create)) // Legacy frontend support
         .route("/create/stats", get(handle_legacy_create_stats)) // Legacy frontend support
-        .route("/:slug", get(get_space).put(update_space).delete(delete_space))
+        .route(
+            "/:slug",
+            get(get_space).put(update_space).delete(delete_space),
+        )
         .route("/:slug/stats", get(get_space_stats))
 }
 
@@ -29,7 +34,10 @@ async fn list_spaces(
     Query(query): Query<SpaceListQuery>,
     OptionalUser(user): OptionalUser,
 ) -> Result<Json<Value>> {
-    let result = app_state.space_service.list_spaces(query, user.as_ref()).await?;
+    let result = app_state
+        .space_service
+        .list_spaces(query, user.as_ref())
+        .await?;
 
     Ok(Json(json!({
         "success": true,
@@ -46,8 +54,12 @@ async fn create_space(
     Json(request): Json<CreateSpaceRequest>,
 ) -> Result<Json<Value>> {
     // 检查用户是否有创建空间的权限
-    if !user.permissions.contains(&"spaces.write".to_string()) && !user.permissions.contains(&"docs.admin".to_string()) {
-        return Err(AppError::Authorization("Permission denied: spaces.write required".to_string()));
+    if !user.permissions.contains(&"spaces.write".to_string())
+        && !user.permissions.contains(&"docs.admin".to_string())
+    {
+        return Err(AppError::Authorization(
+            "Permission denied: spaces.write required".to_string(),
+        ));
     }
     let result = app_state.space_service.create_space(request, &user).await?;
 
@@ -67,7 +79,10 @@ async fn get_space(
     Path(slug): Path<String>,
     OptionalUser(user): OptionalUser,
 ) -> Result<Json<Value>> {
-    let result = app_state.space_service.get_space_by_slug(&slug, user.as_ref()).await?;
+    let result = app_state
+        .space_service
+        .get_space_by_slug(&slug, user.as_ref())
+        .await?;
 
     Ok(Json(json!({
         "success": true,
@@ -84,7 +99,10 @@ async fn update_space(
     user: User,
     Json(request): Json<UpdateSpaceRequest>,
 ) -> Result<Json<Value>> {
-    let result = app_state.space_service.update_space(&slug, request, &user).await?;
+    let result = app_state
+        .space_service
+        .update_space(&slug, request, &user)
+        .await?;
 
     info!("User {} updated space: {}", user.id, slug);
 
@@ -121,8 +139,11 @@ async fn get_space_stats(
     OptionalUser(user): OptionalUser,
 ) -> Result<Json<Value>> {
     // 首先检查用户是否有访问空间的权限
-    let space = app_state.space_service.get_space_by_slug(&slug, user.as_ref()).await?;
-    
+    let space = app_state
+        .space_service
+        .get_space_by_slug(&slug, user.as_ref())
+        .await?;
+
     // 统计信息已经包含在空间响应中
     let stats = space.stats.unwrap_or_default();
 
@@ -149,7 +170,7 @@ async fn handle_legacy_create_stats(
     OptionalUser(_user): OptionalUser,
 ) -> Result<Json<Value>> {
     Err(AppError::BadRequest(
-        "Invalid endpoint. Please use '/api/docs/spaces/{slug}/stats' instead.".to_string()
+        "Invalid endpoint. Please use '/api/docs/spaces/{slug}/stats' instead.".to_string(),
     ))
 }
 
@@ -164,8 +185,7 @@ mod tests {
     // 在实际项目中，应该使用测试数据库或模拟
 
     async fn create_test_server() -> TestServer {
-        let app = Router::new()
-            .nest("/api/spaces", router());
+        let app = Router::new().nest("/api/spaces", router());
         TestServer::new(app).unwrap()
     }
 

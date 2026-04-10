@@ -1,6 +1,6 @@
+use crate::services::database::record_id_to_string;
 use serde::{Deserialize, Serialize};
 use surrealdb::types::{Datetime, RecordId as Thing};
-use crate::services::database::record_id_to_string;
 use validator::Validate;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -118,10 +118,14 @@ impl FileUpload {
 
 impl From<FileUpload> for FileResponse {
     fn from(file: FileUpload) -> Self {
-        let id = file.id.as_ref().map(record_id_to_string).unwrap_or_default();
+        let id = file
+            .id
+            .as_ref()
+            .map(record_id_to_string)
+            .unwrap_or_default();
         let space_id = file.space_id.as_ref().map(record_id_to_string);
         let document_id = file.document_id.as_ref().map(record_id_to_string);
-        
+
         // 生成文件访问URL
         let url = format!("/api/files/{}/download", id);
         let thumbnail_url = if file.is_image() {

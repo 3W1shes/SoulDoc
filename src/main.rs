@@ -1,40 +1,34 @@
-use std::sync::Arc;
 use axum::{
     extract::Query,
     response::Html,
-    routing::{Router, post, get, delete},
+    routing::{delete, get, post, Router},
     Extension,
 };
 use serde::Deserialize;
-use tower_http::cors::{Any, CorsLayer};
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-use tracing::{info, warn};
+use std::sync::Arc;
 use tokio::time::{interval, Duration};
+use tower_http::cors::{Any, CorsLayer};
+use tracing::{info, warn};
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-mod routes;
-mod models;
-mod services;
+mod agent;
 mod config;
 mod error;
-mod utils;
+mod models;
+mod routes;
+mod services;
 mod state;
+mod utils;
 
 use crate::{
     config::Config,
-    state::AppState,
     services::{
-        database::Database,
-        auth::AuthService,
-        spaces::SpaceService,
-        space_member::SpaceMemberService,
-        documents::DocumentService,
-        comments::CommentService,
-        publication::PublicationService,
-        search::SearchService,
-        versions::VersionService,
-        tags::TagService,
-        file_upload::FileUploadService,
+        auth::AuthService, comments::CommentService, database::Database,
+        documents::DocumentService, file_upload::FileUploadService,
+        publication::PublicationService, search::SearchService, space_member::SpaceMemberService,
+        spaces::SpaceService, tags::TagService, versions::VersionService,
     },
+    state::AppState,
     utils::markdown::MarkdownProcessor,
 };
 
@@ -42,7 +36,9 @@ use crate::{
 async fn main() -> anyhow::Result<()> {
     // 初始化日志
     tracing_subscriber::registry()
-        .with(tracing_subscriber::EnvFilter::new("rainbow_docs=debug,tower_http=debug"))
+        .with(tracing_subscriber::EnvFilter::new(
+            "rainbow_docs=debug,tower_http=debug",
+        ))
         .with(tracing_subscriber::fmt::layer())
         .init();
 
@@ -76,12 +72,16 @@ async fn main() -> anyhow::Result<()> {
                 Err(e) => {
                     warn!("Database connection failed: {}", e);
                     info!("Attempting to auto-start database...");
-                    
+
                     // 尝试自动启动数据库
                     if let Err(start_err) = auto_start_database(&config).await {
-                        return Err(anyhow::anyhow!("Failed to auto-start database: {}. Original error: {}", start_err, e));
+                        return Err(anyhow::anyhow!(
+                            "Failed to auto-start database: {}. Original error: {}",
+                            start_err,
+                            e
+                        ));
                     }
-                    
+
                     // 重新尝试连接
                     let db = Database::new(&config).await?;
                     db.verify_connection().await?;
@@ -93,12 +93,16 @@ async fn main() -> anyhow::Result<()> {
         Err(e) => {
             warn!("Failed to create database connection: {}", e);
             info!("Attempting to auto-start database...");
-            
+
             // 尝试自动启动数据库
             if let Err(start_err) = auto_start_database(&config).await {
-                return Err(anyhow::anyhow!("Failed to auto-start database: {}. Original error: {}", start_err, e));
+                return Err(anyhow::anyhow!(
+                    "Failed to auto-start database: {}. Original error: {}",
+                    start_err,
+                    e
+                ));
             }
-            
+
             // 重新尝试连接
             let db = Database::new(&config).await?;
             db.verify_connection().await?;
@@ -106,7 +110,7 @@ async fn main() -> anyhow::Result<()> {
             db
         }
     };
-    
+
     info!("Database connection established. Please ensure database schema is initialized with docs_schema.sql");
 
     // 创建共享的数据库实例
@@ -118,17 +122,24 @@ async fn main() -> anyhow::Result<()> {
     // 创建业务服务
     let space_service = Arc::new(SpaceService::new(shared_db.clone()));
     let space_member_service = Arc::new(SpaceMemberService::new(shared_db.clone(), config.clone()));
-    let file_upload_service = Arc::new(FileUploadService::new(shared_db.clone(), auth_service.clone()));
+    let file_upload_service = Arc::new(FileUploadService::new(
+        shared_db.clone(),
+        auth_service.clone(),
+    ));
     let tag_service = Arc::new(TagService::new(shared_db.clone(), auth_service.clone()));
-    
+
     let markdown_processor = Arc::new(MarkdownProcessor::new());
     let search_service = Arc::new(SearchService::new(shared_db.clone(), auth_service.clone()));
     let version_service = Arc::new(VersionService::new(shared_db.clone(), auth_service.clone()));
-    let document_service = Arc::new(DocumentService::new(
-        shared_db.clone(),
-        auth_service.clone(),
-        markdown_processor.clone(),
-    ).with_search_service(search_service.clone()).with_version_service(version_service.clone()));
+    let document_service = Arc::new(
+        DocumentService::new(
+            shared_db.clone(),
+            auth_service.clone(),
+            markdown_processor.clone(),
+        )
+        .with_search_service(search_service.clone())
+        .with_version_service(version_service.clone()),
+    );
     let comment_service = Arc::new(CommentService::new(shared_db.clone(), auth_service.clone()));
     let publication_service = Arc::new(PublicationService::new(shared_db.clone()));
 
@@ -161,6 +172,7 @@ async fn main() -> anyhow::Result<()> {
 
     // 创建路由
     let mut app = Router::new()
+        .nest("/api/docs/agent", agent::router::router())
         .nest("/api/docs/auth", routes::auth::router())
         .nest("/api/docs/spaces", routes::spaces::router())
         .nest("/api/docs/spaces", routes::space_members::router())
@@ -174,6 +186,7 @@ async fn main() -> anyhow::Result<()> {
         .nest("/api/docs/stats", routes::stats::router())
         .nest("/api/docs/versions", routes::versions::router())
         .nest("/api/docs", vectors_router())
+        .nest("/agent/v1", agent::router::router())
         .route("/sso", get(sso_bridge));
 
     // 如果是安装模式，额外添加安装路由
@@ -252,74 +265,98 @@ async fn sso_bridge(
 
 // 自动启动数据库的函数
 async fn auto_start_database(config: &Config) -> anyhow::Result<()> {
-    use std::process::Command;
     use std::fs;
     use std::path::Path;
-    
+    use std::process::Command;
+
     info!("Auto-starting SurrealDB database service...");
-    
+
     // 创建数据目录（如果不存在）
     let data_dir = "./data";
     if !Path::new(data_dir).exists() {
         fs::create_dir_all(data_dir)
             .map_err(|e| anyhow::anyhow!("Failed to create data directory: {}", e))?;
     }
-    
+
     // 构建数据库文件路径
     let db_file = format!("{}/rainbow.db", data_dir);
-    
+
     // 从配置中读取数据库认证信息
     let database_user = config.database.user.clone();
     let database_pass = config.database.pass.clone();
     let database_url = config.database.url.clone();
-    
+
     // 构建启动命令
     let mut cmd = Command::new("surreal");
     cmd.arg("start")
-       .arg("--auth")
-       .arg("--user").arg(&database_user)
-       .arg("--pass").arg(&database_pass)
-       .arg("--bind").arg(&database_url)
-       .arg(format!("file://{}", db_file));
-    
+        .arg("--auth")
+        .arg("--user")
+        .arg(&database_user)
+        .arg("--pass")
+        .arg(&database_pass)
+        .arg("--bind")
+        .arg(&database_url)
+        .arg(format!("file://{}", db_file));
+
     // 在后台启动数据库
-    info!("Executing: surreal start --auth --user {} --pass *** --bind {} file://{}", 
-           database_user, database_url, db_file);
-    
-    let child = cmd.spawn()
-        .map_err(|e| anyhow::anyhow!("Failed to start SurrealDB: {}. Please make sure SurrealDB is installed.", e))?;
-    
+    info!(
+        "Executing: surreal start --auth --user {} --pass *** --bind {} file://{}",
+        database_user, database_url, db_file
+    );
+
+    let child = cmd.spawn().map_err(|e| {
+        anyhow::anyhow!(
+            "Failed to start SurrealDB: {}. Please make sure SurrealDB is installed.",
+            e
+        )
+    })?;
+
     // 保存进程ID
     let pid = child.id();
     fs::write(".surreal_pid", pid.to_string())
         .map_err(|e| anyhow::anyhow!("Failed to save database PID: {}", e))?;
-    
+
     info!("SurrealDB process started (PID: {})", pid);
-    
+
     // 等待数据库启动
     info!("Waiting for database service to be ready...");
     tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-    
+
     info!("Database service should be ready now");
     Ok(())
 }
 
 fn vectors_router() -> Router {
     Router::new()
-        .route("/documents/:id/vectors", post(routes::vectors::store_document_vector))
-        .route("/documents/:id/vectors", get(routes::vectors::get_document_vectors))
-        .route("/documents/:id/vectors/:vector_id", delete(routes::vectors::delete_document_vector))
+        .route(
+            "/documents/:id/vectors",
+            post(routes::vectors::store_document_vector),
+        )
+        .route(
+            "/documents/:id/vectors",
+            get(routes::vectors::get_document_vectors),
+        )
+        .route(
+            "/documents/:id/vectors/:vector_id",
+            delete(routes::vectors::delete_document_vector),
+        )
         .route("/search/vector", post(routes::vectors::vector_search))
-        .route("/documents/batch", post(routes::vectors::batch_get_documents))
-        .route("/vectors/batch", post(routes::vectors::batch_update_vectors))
+        .route(
+            "/documents/batch",
+            post(routes::vectors::batch_get_documents),
+        )
+        .route(
+            "/vectors/batch",
+            post(routes::vectors::batch_update_vectors),
+        )
 }
 
 #[cfg(feature = "installer")]
 async fn start_installer_only_mode(config: Config) -> anyhow::Result<()> {
     use crate::routes::installer::installer_routes;
-    
+
     info!("Starting installer-only mode (no database required)");
-    
+
     // 创建仅包含安装路由的应用
     let app = Router::new()
         .nest("/api/install", installer_routes())
@@ -330,13 +367,13 @@ async fn start_installer_only_mode(config: Config) -> anyhow::Result<()> {
                 .allow_methods(Any)
                 .allow_headers(Any),
         );
-    
+
     // 启动服务器
     let addr = "0.0.0.0:3000";
     info!("Rainbow-Docs installer-only mode listening on {}", addr);
     axum::Server::bind(&addr.parse()?)
         .serve(app.into_make_service())
         .await?;
-    
+
     Ok(())
 }

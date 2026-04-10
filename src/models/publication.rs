@@ -1,9 +1,9 @@
-use serde::{Deserialize, Serialize};
+use crate::services::database::record_id_to_string;
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use surrealdb::types::RecordId as Thing;
 use validator::Validate;
-use std::collections::HashMap;
-use crate::services::database::record_id_to_string;
 
 /// 数据库中的空间发布记录（使用Thing类型的ID）  
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -16,19 +16,19 @@ pub struct SpacePublicationDb {
     pub description: Option<String>,
     pub cover_image: Option<String>,
     pub theme: String,
-    
+
     // 发布设置
     pub include_private_docs: bool,
     pub enable_search: bool,
     pub enable_comments: bool,
     pub custom_css: Option<String>,
     pub custom_js: Option<String>,
-    
+
     // SEO 设置
     pub seo_title: Option<String>,
     pub seo_description: Option<String>,
     pub seo_keywords: Vec<String>,
-    
+
     // 状态和时间戳
     pub is_active: bool,
     pub is_deleted: bool,
@@ -49,19 +49,19 @@ pub struct SpacePublication {
     pub description: Option<String>,
     pub cover_image: Option<String>,
     pub theme: String,
-    
+
     // 发布设置
     pub include_private_docs: bool,
     pub enable_search: bool,
     pub enable_comments: bool,
     pub custom_css: Option<String>,
     pub custom_js: Option<String>,
-    
+
     // SEO 设置
     pub seo_title: Option<String>,
     pub seo_description: Option<String>,
     pub seo_keywords: Vec<String>,
-    
+
     // 状态和时间戳
     pub is_active: bool,
     pub is_deleted: bool,
@@ -92,21 +92,21 @@ pub struct PublicationDocumentDb {
     pub id: Option<Thing>,
     pub publication_id: String,
     pub original_doc_id: String,
-    
+
     // 文档内容快照
     pub title: String,
     pub slug: String,
     pub content: String,
     pub excerpt: Option<String>,
-    
+
     // 文档结构
     pub parent_id: Option<String>,
     pub order_index: u32,
-    
+
     // 文档元数据
     pub word_count: u32,
     pub reading_time: u32,
-    
+
     pub created_at: Option<DateTime<Utc>>,
 }
 
@@ -116,21 +116,21 @@ pub struct PublicationDocument {
     pub id: Option<String>,
     pub publication_id: String,
     pub original_doc_id: String,
-    
+
     // 文档内容快照
     pub title: String,
     pub slug: String,
     pub content: String,
     pub excerpt: Option<String>,
-    
+
     // 文档结构
     pub parent_id: Option<String>,
     pub order_index: u32,
-    
+
     // 文档元数据
     pub word_count: u32,
     pub reading_time: u32,
-    
+
     pub created_at: Option<DateTime<Utc>>,
 }
 
@@ -139,19 +139,19 @@ pub struct PublicationDocument {
 pub struct PublicationAnalyticsDb {
     pub id: Option<Thing>,
     pub publication_id: String,
-    
+
     // 访问统计
     pub total_views: u64,
     pub unique_visitors: u64,
-    
+
     // 按时间段统计
     pub views_today: u32,
     pub views_week: u32,
     pub views_month: u32,
-    
+
     // 最热门文档
     pub popular_documents: Vec<PopularDocument>,
-    
+
     pub updated_at: Option<DateTime<Utc>>,
 }
 
@@ -160,19 +160,19 @@ pub struct PublicationAnalyticsDb {
 pub struct PublicationAnalytics {
     pub id: Option<String>,
     pub publication_id: String,
-    
+
     // 访问统计
     pub total_views: u64,
     pub unique_visitors: u64,
-    
+
     // 按时间段统计
     pub views_today: u32,
     pub views_week: u32,
     pub views_month: u32,
-    
+
     // 最热门文档
     pub popular_documents: Vec<PopularDocument>,
-    
+
     pub updated_at: Option<DateTime<Utc>>,
 }
 
@@ -189,16 +189,16 @@ pub struct PublicationDomain {
     pub id: Option<String>,
     pub publication_id: String,
     pub domain: String,
-    
+
     // SSL 证书信息
     pub ssl_status: SslStatus,
     pub ssl_issued_at: Option<DateTime<Utc>>,
     pub ssl_expires_at: Option<DateTime<Utc>>,
-    
+
     // 状态
     pub is_verified: bool,
     pub is_active: bool,
-    
+
     pub created_at: Option<DateTime<Utc>>,
     pub updated_at: Option<DateTime<Utc>>,
 }
@@ -217,11 +217,11 @@ pub struct PublicationHistoryDb {
     pub id: Option<Thing>,
     pub publication_id: String,
     pub version: u32,
-    
+
     // 变更信息
     pub change_summary: Option<String>,
     pub changed_documents: Vec<ChangedDocument>,
-    
+
     // 操作信息
     pub published_by: String,
     pub published_at: Option<DateTime<Utc>>,
@@ -233,11 +233,11 @@ pub struct PublicationHistory {
     pub id: Option<String>,
     pub publication_id: String,
     pub version: u32,
-    
+
     // 变更信息
     pub change_summary: Option<String>,
     pub changed_documents: Vec<ChangedDocument>,
-    
+
     // 操作信息
     pub published_by: String,
     pub published_at: Option<DateTime<Utc>>,
@@ -264,23 +264,23 @@ pub struct CreatePublicationRequest {
     #[validate(length(min = 1, max = 100))]
     #[validate(regex = "SLUG_REGEX")]
     pub slug: String,
-    
+
     #[validate(length(min = 1, max = 200))]
     pub title: String,
-    
+
     #[validate(length(max = 1000))]
     pub description: Option<String>,
-    
+
     pub cover_image: Option<String>,
     pub theme: Option<String>,
-    
+
     // 发布设置
     pub include_private_docs: Option<bool>,
     pub enable_search: Option<bool>,
     pub enable_comments: Option<bool>,
     pub custom_css: Option<String>,
     pub custom_js: Option<String>,
-    
+
     // SEO 设置
     pub seo_title: Option<String>,
     pub seo_description: Option<String>,
@@ -292,19 +292,19 @@ pub struct CreatePublicationRequest {
 pub struct UpdatePublicationRequest {
     #[validate(length(min = 1, max = 200))]
     pub title: Option<String>,
-    
+
     #[validate(length(max = 1000))]
     pub description: Option<String>,
-    
+
     pub cover_image: Option<String>,
     pub theme: Option<String>,
-    
+
     // 发布设置
     pub enable_search: Option<bool>,
     pub enable_comments: Option<bool>,
     pub custom_css: Option<String>,
     pub custom_js: Option<String>,
-    
+
     // SEO 设置
     pub seo_title: Option<String>,
     pub seo_description: Option<String>,
@@ -322,16 +322,16 @@ pub struct PublicationResponse {
     pub description: Option<String>,
     pub cover_image: Option<String>,
     pub theme: String,
-    
+
     // URLs
     pub public_url: String,
     pub preview_url: String,
     pub custom_domain: Option<String>,
-    
+
     // 统计信息
     pub document_count: u32,
     pub total_views: u64,
-    
+
     // 状态
     pub is_active: bool,
     pub published_by: String,
@@ -450,12 +450,16 @@ impl SpacePublication {
     pub fn get_public_url(&self, base_url: &str) -> String {
         format!("{}/p/{}", base_url, self.slug)
     }
-    
+
     /// 生成预览URL
     pub fn get_preview_url(&self, base_url: &str) -> String {
-        format!("{}/preview/{}", base_url, self.id.as_ref().unwrap_or(&String::new()))
+        format!(
+            "{}/preview/{}",
+            base_url,
+            self.id.as_ref().unwrap_or(&String::new())
+        )
     }
-    
+
     /// 检查是否可以被更新
     pub fn can_update(&self) -> bool {
         self.is_active && !self.is_deleted

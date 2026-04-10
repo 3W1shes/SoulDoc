@@ -4,8 +4,11 @@ use validator::Validate;
 
 use crate::{
     error::ApiError,
-    models::tag::{Tag, DocumentTag, CreateTagRequest, UpdateTagRequest, TagDocumentRequest},
-    services::{auth::AuthService, database::{Database, record_id_to_string}},
+    models::tag::{CreateTagRequest, DocumentTag, Tag, TagDocumentRequest, UpdateTagRequest},
+    services::{
+        auth::AuthService,
+        database::{record_id_to_string, Database},
+    },
 };
 
 #[derive(Clone)]
@@ -27,8 +30,13 @@ impl TagService {
         request.validate()?;
 
         // 检查标签名在空间内是否唯一
-        if self.tag_exists_in_space(&request.space_id, &request.name).await? {
-            return Err(ApiError::Conflict("Tag name already exists in this space".to_string()));
+        if self
+            .tag_exists_in_space(&request.space_id, &request.name)
+            .await?
+        {
+            return Err(ApiError::Conflict(
+                "Tag name already exists in this space".to_string(),
+            ));
         }
 
         let space_thing = if let Some(space_id) = &request.space_id {
@@ -41,7 +49,9 @@ impl TagService {
             .with_description(request.description.unwrap_or_default())
             .with_space(space_thing);
 
-        let created: Vec<Tag> = self.db.client
+        let created: Vec<Tag> = self
+            .db
+            .client
             .create("tag")
             .content(tag)
             .await
@@ -54,7 +64,9 @@ impl TagService {
     }
 
     pub async fn get_tag(&self, tag_id: &str) -> Result<Tag, ApiError> {
-        let tag: Option<Tag> = self.db.client
+        let tag: Option<Tag> = self
+            .db
+            .client
             .select(("tag", tag_id))
             .await
             .map_err(|e| ApiError::DatabaseError(e.to_string()))?;
@@ -74,8 +86,14 @@ impl TagService {
 
         if let Some(name) = request.name {
             // 检查新名称是否与其他标签冲突
-            if name != tag.name && self.tag_exists_in_space(&tag.space_id.as_ref().map(record_id_to_string), &name).await? {
-                return Err(ApiError::Conflict("Tag name already exists in this space".to_string()));
+            if name != tag.name
+                && self
+                    .tag_exists_in_space(&tag.space_id.as_ref().map(record_id_to_string), &name)
+                    .await?
+            {
+                return Err(ApiError::Conflict(
+                    "Tag name already exists in this space".to_string(),
+                ));
             }
             tag.name = name;
             tag.slug = Tag::generate_slug(&tag.name);
@@ -91,7 +109,9 @@ impl TagService {
 
         tag.updated_at = surrealdb::types::Datetime::default();
 
-        let updated: Option<Tag> = self.db.client
+        let updated: Option<Tag> = self
+            .db
+            .client
             .update(("tag", tag_id))
             .content(tag)
             .await
@@ -103,7 +123,9 @@ impl TagService {
     pub async fn delete_tag(&self, tag_id: &str) -> Result<(), ApiError> {
         // 首先删除所有与此标签关联的文档标签关系
         let query = "DELETE document_tag WHERE tag_id = $tag_id";
-        let _: Vec<serde_json::Value> = self.db.client
+        let _: Vec<serde_json::Value> = self
+            .db
+            .client
             .query(query)
             .bind(("tag_id", Thing::new("tag", tag_id)))
             .await
@@ -112,7 +134,9 @@ impl TagService {
             .map_err(|e| ApiError::DatabaseError(e.to_string()))?;
 
         // 删除标签
-        let _: Option<Tag> = self.db.client
+        let _: Option<Tag> = self
+            .db
+            .client
             .delete(("tag", tag_id))
             .await
             .map_err(|e| ApiError::DatabaseError(e.to_string()))?;
@@ -127,7 +151,7 @@ impl TagService {
         per_page: i64,
     ) -> Result<Vec<Tag>, ApiError> {
         let offset = (page - 1) * per_page;
-        
+
         let query = if let Some(space_id) = space_id {
             "SELECT * FROM tag WHERE space_id = $space_id ORDER BY usage_count DESC, name ASC LIMIT $limit START $offset"
         } else {
@@ -135,7 +159,7 @@ impl TagService {
         };
 
         let mut db_query = self.db.client.query(query);
-        
+
         if let Some(space_id) = space_id {
             db_query = db_query.bind(("space_id", Thing::new("space", space_id)));
         }
@@ -151,7 +175,11 @@ impl TagService {
         Ok(tags)
     }
 
-    pub async fn get_popular_tags(&self, space_id: Option<&str>, limit: i64) -> Result<Vec<Tag>, ApiError> {
+    pub async fn get_popular_tags(
+        &self,
+        space_id: Option<&str>,
+        limit: i64,
+    ) -> Result<Vec<Tag>, ApiError> {
         let query = if let Some(space_id) = space_id {
             "SELECT * FROM tag WHERE space_id = $space_id AND usage_count > 0 ORDER BY usage_count DESC LIMIT $limit"
         } else {
@@ -159,7 +187,7 @@ impl TagService {
         };
 
         let mut db_query = self.db.client.query(query);
-        
+
         if let Some(space_id) = space_id {
             db_query = db_query.bind(("space_id", Thing::new("space", space_id)));
         }
@@ -174,7 +202,12 @@ impl TagService {
         Ok(tags)
     }
 
-    pub async fn search_tags(&self, space_id: Option<&str>, query: &str, limit: i64) -> Result<Vec<Tag>, ApiError> {
+    pub async fn search_tags(
+        &self,
+        space_id: Option<&str>,
+        query: &str,
+        limit: i64,
+    ) -> Result<Vec<Tag>, ApiError> {
         let search_query = if let Some(space_id) = space_id {
             "SELECT * FROM tag WHERE space_id = $space_id AND (name CONTAINSTEXT $query OR description CONTAINSTEXT $query) ORDER BY usage_count DESC LIMIT $limit"
         } else {
@@ -182,7 +215,7 @@ impl TagService {
         };
 
         let mut db_query = self.db.client.query(search_query);
-        
+
         if let Some(space_id) = space_id {
             db_query = db_query.bind(("space_id", Thing::new("space", space_id)));
         }
@@ -209,16 +242,21 @@ impl TagService {
 
         for tag_id in request.tag_ids {
             // 检查关联是否已存在
-            if !self.document_tag_exists(&request.document_id, &tag_id).await? {
+            if !self
+                .document_tag_exists(&request.document_id, &tag_id)
+                .await?
+            {
                 let tag_thing = Thing::new("tag", tag_id.as_str());
-                
+
                 let document_tag = DocumentTag::new(
                     document_thing.clone(),
                     tag_thing.clone(),
                     tagger_id.to_string(),
                 );
 
-                let created: Vec<DocumentTag> = self.db.client
+                let created: Vec<DocumentTag> = self
+                    .db
+                    .client
                     .create("document_tag")
                     .content(document_tag)
                     .await
@@ -226,7 +264,7 @@ impl TagService {
 
                 if let Some(created_tag) = created.into_iter().next() {
                     created_tags.push(created_tag);
-                    
+
                     // 增加标签使用计数
                     self.increment_tag_usage(&tag_id).await?;
                 }
@@ -236,14 +274,12 @@ impl TagService {
         Ok(created_tags)
     }
 
-    pub async fn untag_document(
-        &self,
-        document_id: &str,
-        tag_id: &str,
-    ) -> Result<(), ApiError> {
+    pub async fn untag_document(&self, document_id: &str, tag_id: &str) -> Result<(), ApiError> {
         let query = "DELETE document_tag WHERE document_id = $document_id AND tag_id = $tag_id";
-        
-        let _: Vec<serde_json::Value> = self.db.client
+
+        let _: Vec<serde_json::Value> = self
+            .db
+            .client
             .query(query)
             .bind(("document_id", Thing::new("document", document_id)))
             .bind(("tag_id", Thing::new("tag", tag_id)))
@@ -266,7 +302,9 @@ impl TagService {
             ORDER BY tag.name ASC
         ";
 
-        let tags: Vec<Tag> = self.db.client
+        let tags: Vec<Tag> = self
+            .db
+            .client
             .query(query)
             .bind(("document_id", Thing::new("document", document_id)))
             .await
@@ -284,7 +322,7 @@ impl TagService {
         per_page: i64,
     ) -> Result<Vec<String>, ApiError> {
         let offset = (page - 1) * per_page;
-        
+
         let query = "
             SELECT document_tag.document_id FROM document_tag 
             WHERE document_tag.tag_id = $tag_id
@@ -292,7 +330,9 @@ impl TagService {
             LIMIT $limit START $offset
         ";
 
-        let results: Vec<serde_json::Value> = self.db.client
+        let results: Vec<serde_json::Value> = self
+            .db
+            .client
             .query(query)
             .bind(("tag_id", Thing::new("tag", tag_id)))
             .bind(("limit", per_page))
@@ -304,13 +344,20 @@ impl TagService {
 
         let document_ids: Vec<String> = results
             .into_iter()
-            .filter_map(|v| v.get("document_id").and_then(|id| id.as_str()).map(|s| s.to_string()))
+            .filter_map(|v| {
+                v.get("document_id")
+                    .and_then(|id| id.as_str())
+                    .map(|s| s.to_string())
+            })
             .collect();
 
         Ok(document_ids)
     }
 
-    pub async fn get_tag_statistics(&self, space_id: Option<&str>) -> Result<TagStatistics, ApiError> {
+    pub async fn get_tag_statistics(
+        &self,
+        space_id: Option<&str>,
+    ) -> Result<TagStatistics, ApiError> {
         let total_query = if let Some(space_id) = space_id {
             "SELECT count() as total FROM tag WHERE space_id = $space_id GROUP ALL"
         } else {
@@ -366,7 +413,11 @@ impl TagService {
     }
 
     // 私有辅助方法
-    async fn tag_exists_in_space(&self, space_id: &Option<String>, name: &str) -> Result<bool, ApiError> {
+    async fn tag_exists_in_space(
+        &self,
+        space_id: &Option<String>,
+        name: &str,
+    ) -> Result<bool, ApiError> {
         let query = if let Some(space_id) = space_id {
             "SELECT count() FROM tag WHERE space_id = $space_id AND name = $name GROUP ALL"
         } else {
@@ -397,7 +448,9 @@ impl TagService {
     async fn document_tag_exists(&self, document_id: &str, tag_id: &str) -> Result<bool, ApiError> {
         let query = "SELECT count() FROM document_tag WHERE document_id = $document_id AND tag_id = $tag_id GROUP ALL";
 
-        let result: Vec<serde_json::Value> = self.db.client
+        let result: Vec<serde_json::Value> = self
+            .db
+            .client
             .query(query)
             .bind(("document_id", Thing::new("document", document_id)))
             .bind(("tag_id", Thing::new("tag", tag_id)))
@@ -418,7 +471,9 @@ impl TagService {
     async fn increment_tag_usage(&self, tag_id: &str) -> Result<(), ApiError> {
         let query = "UPDATE tag SET usage_count += 1 WHERE id = $tag_id";
 
-        let _: Vec<serde_json::Value> = self.db.client
+        let _: Vec<serde_json::Value> = self
+            .db
+            .client
             .query(query)
             .bind(("tag_id", Thing::new("tag", tag_id)))
             .await
@@ -432,7 +487,9 @@ impl TagService {
     async fn decrement_tag_usage(&self, tag_id: &str) -> Result<(), ApiError> {
         let query = "UPDATE tag SET usage_count = math::max(usage_count - 1, 0) WHERE id = $tag_id";
 
-        let _: Vec<serde_json::Value> = self.db.client
+        let _: Vec<serde_json::Value> = self
+            .db
+            .client
             .query(query)
             .bind(("tag_id", Thing::new("tag", tag_id)))
             .await

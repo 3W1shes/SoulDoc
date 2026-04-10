@@ -272,6 +272,11 @@ MAX_FILE_SIZE=10485760
 
 ## API 文档
 
+### Agent / OpenClaw 集成文档
+- [SoulDoc Agent API v1](./docs/agent_api_v1.md)
+- [SoulDoc × OpenClaw 集成说明](./docs/openclaw_integration.md)
+- [最小 OpenClaw tool catalog 示例](./docs/examples/openclaw_tool_catalog.json)
+
 ### 认证
 所有API需要在请求头中包含有效的JWT token：
 ```

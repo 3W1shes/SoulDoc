@@ -1,20 +1,14 @@
-use std::sync::Arc;
 use crate::{
-    services::database::Database,
     config::Config,
+    services::database::Database,
     services::{
-        auth::AuthService,
-        spaces::SpaceService,
-        space_member::SpaceMemberService,
-        documents::DocumentService,
-        comments::CommentService,
-        publication::PublicationService,
-        search::SearchService,
+        auth::AuthService, comments::CommentService, documents::DocumentService,
+        file_upload::FileUploadService, publication::PublicationService, search::SearchService,
+        space_member::SpaceMemberService, spaces::SpaceService, tags::TagService,
         versions::VersionService,
-        tags::TagService,
-        file_upload::FileUploadService,
     },
 };
+use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct AppState {

@@ -1,20 +1,19 @@
 use axum::{
     extract::{Path, State},
     http::StatusCode,
-    Json,
     response::IntoResponse,
-    Extension,
+    Extension, Json,
 };
-use std::sync::Arc;
 use serde_json::json;
+use std::sync::Arc;
 
 use crate::{
+    error::{AppError, Result},
     services::vector::{
-        VectorService, VectorData, VectorSearchRequest, BatchGetRequest, 
-        BatchVectorRequest, BatchVectorData
+        BatchGetRequest, BatchVectorData, BatchVectorRequest, VectorData, VectorSearchRequest,
+        VectorService,
     },
     state::AppState,
-    error::{AppError, Result},
 };
 
 /// 存储文档向量
@@ -24,11 +23,11 @@ pub async fn store_document_vector(
     Json(vector_data): Json<VectorData>,
 ) -> Result<impl IntoResponse> {
     let vector_service = VectorService::new(state.db.clone());
-    
+
     let response = vector_service
         .store_vector(&document_id, vector_data)
         .await?;
-    
+
     Ok(Json(response))
 }
 
@@ -38,11 +37,9 @@ pub async fn vector_search(
     Json(request): Json<VectorSearchRequest>,
 ) -> Result<impl IntoResponse> {
     let vector_service = VectorService::new(state.db.clone());
-    
-    let response = vector_service
-        .search_similar(request)
-        .await?;
-    
+
+    let response = vector_service.search_similar(request).await?;
+
     Ok(Json(response))
 }
 
@@ -52,11 +49,9 @@ pub async fn get_document_vectors(
     Extension(state): Extension<Arc<AppState>>,
 ) -> Result<impl IntoResponse> {
     let vector_service = VectorService::new(state.db.clone());
-    
-    let response = vector_service
-        .get_document_vectors(&document_id)
-        .await?;
-    
+
+    let response = vector_service.get_document_vectors(&document_id).await?;
+
     Ok(Json(response))
 }
 
@@ -66,11 +61,9 @@ pub async fn delete_document_vector(
     Extension(state): Extension<Arc<AppState>>,
 ) -> Result<impl IntoResponse> {
     let vector_service = VectorService::new(state.db.clone());
-    
-    let success = vector_service
-        .delete_vector(&vector_id)
-        .await?;
-    
+
+    let success = vector_service.delete_vector(&vector_id).await?;
+
     Ok(Json(json!({
         "success": success,
         "deleted_vector_id": vector_id
@@ -83,11 +76,11 @@ pub async fn batch_get_documents(
     Json(request): Json<BatchGetRequest>,
 ) -> Result<impl IntoResponse> {
     let vector_service = VectorService::new(state.db.clone());
-    
+
     let documents = vector_service
         .batch_get_documents(request.document_ids, request.fields)
         .await?;
-    
+
     Ok(Json(json!({
         "documents": documents
     })))
@@ -99,11 +92,9 @@ pub async fn batch_update_vectors(
     Json(request): Json<BatchVectorRequest>,
 ) -> Result<impl IntoResponse> {
     let vector_service = VectorService::new(state.db.clone());
-    
-    let vector_ids = vector_service
-        .store_vectors_batch(request.vectors)
-        .await?;
-    
+
+    let vector_ids = vector_service.store_vectors_batch(request.vectors).await?;
+
     Ok(Json(json!({
         "success": true,
         "processed": vector_ids.len(),

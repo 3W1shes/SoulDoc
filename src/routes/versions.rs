@@ -2,20 +2,19 @@ use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
     response::Json,
-    routing::{get, post, delete},
-    Extension,
-    Router,
+    routing::{delete, get, post},
+    Extension, Router,
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 use crate::{
     error::ApiError,
-    models::version::{DocumentVersion, CreateVersionRequest},
+    models::version::{CreateVersionRequest, DocumentVersion},
     services::database::record_id_to_string,
     services::{
-        auth::AuthService, 
-        versions::{VersionService, VersionComparison, VersionHistorySummary},
+        auth::AuthService,
+        versions::{VersionComparison, VersionHistorySummary, VersionService},
     },
 };
 
@@ -135,9 +134,7 @@ pub async fn get_current_version(
         .check_permission(&user_id, "docs.read", Some(&document_id))
         .await?;
 
-    let current_version = version_service
-        .get_current_version(&document_id)
-        .await?;
+    let current_version = version_service.get_current_version(&document_id).await?;
 
     Ok(Json(current_version))
 }
@@ -263,12 +260,30 @@ pub struct DateRangeQuery {
 
 pub fn router() -> Router {
     Router::new()
-        .route("/:document_id/versions", get(get_document_versions).post(create_document_version))
+        .route(
+            "/:document_id/versions",
+            get(get_document_versions).post(create_document_version),
+        )
         .route("/:document_id/versions/current", get(get_current_version))
-        .route("/:document_id/versions/summary", get(get_version_history_summary))
+        .route(
+            "/:document_id/versions/summary",
+            get(get_version_history_summary),
+        )
         .route("/:document_id/versions/compare", get(compare_versions))
-        .route("/:document_id/versions/date-range", get(get_versions_by_date_range))
-        .route("/:document_id/versions/:version_id", get(get_version).delete(delete_version))
-        .route("/:document_id/versions/:version_id/restore", post(restore_version))
-        .route("/:document_id/versions/:version_id/diff", get(get_version_diff))
+        .route(
+            "/:document_id/versions/date-range",
+            get(get_versions_by_date_range),
+        )
+        .route(
+            "/:document_id/versions/:version_id",
+            get(get_version).delete(delete_version),
+        )
+        .route(
+            "/:document_id/versions/:version_id/restore",
+            post(restore_version),
+        )
+        .route(
+            "/:document_id/versions/:version_id/diff",
+            get(get_version_diff),
+        )
 }

@@ -10,7 +10,10 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 #[cfg(feature = "installer")]
-use crate::utils::installer::{InstallationChecker, wizard::{InstallationWizard, InstallConfig}};
+use crate::utils::installer::{
+    wizard::{InstallConfig, InstallationWizard},
+    InstallationChecker,
+};
 
 use crate::AppState;
 
@@ -54,17 +57,18 @@ async fn check_install_status() -> Result<Json<InstallResponse>, StatusCode> {
 #[cfg(feature = "installer")]
 async fn get_install_steps(Query(query): Query<InstallQuery>) -> Json<InstallResponse> {
     let steps = InstallationWizard::get_steps();
-    
+
     let data = if let Some(step_num) = query.step {
         // 返回特定步骤
-        steps.into_iter()
+        steps
+            .into_iter()
             .find(|s| s.step == step_num)
             .map(|s| serde_json::to_value(s).unwrap())
     } else {
         // 返回所有步骤
         Some(serde_json::to_value(steps).unwrap())
     };
-    
+
     Json(InstallResponse {
         status: "success".to_string(),
         message: "Installation steps retrieved".to_string(),
@@ -73,7 +77,9 @@ async fn get_install_steps(Query(query): Query<InstallQuery>) -> Json<InstallRes
 }
 
 #[cfg(feature = "installer")]
-async fn perform_install(Json(config): Json<InstallConfig>) -> Result<Json<InstallResponse>, StatusCode> {
+async fn perform_install(
+    Json(config): Json<InstallConfig>,
+) -> Result<Json<InstallResponse>, StatusCode> {
     // 检查是否已安装
     match InstallationChecker::check_installation_status() {
         Ok(status) if status.is_installed => {
@@ -86,7 +92,7 @@ async fn perform_install(Json(config): Json<InstallConfig>) -> Result<Json<Insta
         Err(_) => return Err(StatusCode::INTERNAL_SERVER_ERROR),
         _ => {}
     }
-    
+
     // 执行安装
     match InstallationWizard::perform_installation(config).await {
         Ok(_) => Ok(Json(InstallResponse {

@@ -1,10 +1,10 @@
 use crate::error::{AppError, Result};
-use pulldown_cmark::{Parser, Options, html};
-use syntect::html::{ClassedHTMLGenerator, ClassStyle};
-use syntect::parsing::SyntaxSet;
-use syntect::highlighting::{ThemeSet, Theme};
+use pulldown_cmark::{html, Options, Parser};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use serde::{Serialize, Deserialize};
+use syntect::highlighting::{Theme, ThemeSet};
+use syntect::html::{ClassStyle, ClassedHTMLGenerator};
+use syntect::parsing::SyntaxSet;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ProcessedContent {
@@ -111,16 +111,14 @@ impl MarkdownProcessor {
         // 处理代码块语法高亮
         let parser = parser.map(|event| {
             match &event {
-                pulldown_cmark::Event::Start(pulldown_cmark::Tag::CodeBlock(kind)) => {
-                    match kind {
-                        pulldown_cmark::CodeBlockKind::Fenced(lang) => {
-                            pulldown_cmark::Event::Start(pulldown_cmark::Tag::CodeBlock(
-                                pulldown_cmark::CodeBlockKind::Fenced(lang.clone())
-                            ))
-                        }
-                        _ => event,
+                pulldown_cmark::Event::Start(pulldown_cmark::Tag::CodeBlock(kind)) => match kind {
+                    pulldown_cmark::CodeBlockKind::Fenced(lang) => {
+                        pulldown_cmark::Event::Start(pulldown_cmark::Tag::CodeBlock(
+                            pulldown_cmark::CodeBlockKind::Fenced(lang.clone()),
+                        ))
                     }
-                }
+                    _ => event,
+                },
                 pulldown_cmark::Event::Text(_) => {
                     // 这里可以添加自定义文本处理逻辑
                     event
@@ -149,10 +147,15 @@ impl MarkdownProcessor {
         let mut heading_id_counter = HashMap::new();
 
         for event in parser {
-            if let pulldown_cmark::Event::Start(pulldown_cmark::Tag::Heading(level, fragment_id, _)) = event {
+            if let pulldown_cmark::Event::Start(pulldown_cmark::Tag::Heading(
+                level,
+                fragment_id,
+                _,
+            )) = event
+            {
                 // 下一个事件应该是标题文本
                 let title = "".to_string(); // 这里需要更复杂的逻辑来提取标题文本
-                
+
                 let id = if let Some(id) = fragment_id {
                     id.to_string()
                 } else {
@@ -175,27 +178,29 @@ impl MarkdownProcessor {
     pub fn extract_excerpt(&self, markdown: &str, max_length: usize) -> String {
         // 移除Markdown标记
         let plain_text = self.strip_markdown(markdown);
-        
+
         if plain_text.len() <= max_length {
             plain_text
         } else {
             // 使用字符边界安全截断
             let mut end = max_length;
-            
+
             // 确保不会在字符中间截断
             while !plain_text.is_char_boundary(end) && end > 0 {
                 end -= 1;
             }
-            
+
             if end == 0 {
                 return String::new();
             }
-            
+
             let truncated = &plain_text[..end];
-            
+
             // 尝试在单词或中文字符边界截断
             let chars: Vec<char> = truncated.chars().collect();
-            if let Some(pos) = chars.iter().rposition(|&c| c.is_whitespace() || c == '。' || c == '，' || c == '！' || c == '？') {
+            if let Some(pos) = chars.iter().rposition(|&c| {
+                c.is_whitespace() || c == '。' || c == '，' || c == '！' || c == '？'
+            }) {
                 let safe_truncated: String = chars[..=pos].iter().collect();
                 format!("{}...", safe_truncated.trim())
             } else {
@@ -216,7 +221,7 @@ impl MarkdownProcessor {
     pub fn validate(&self, markdown: &str) -> Result<Vec<ValidationError>> {
         let mut errors = Vec::new();
         let parser = Parser::new(markdown);
-        
+
         for (pos, event) in parser.enumerate() {
             match event {
                 pulldown_cmark::Event::Start(pulldown_cmark::Tag::CodeBlock(kind)) => {
@@ -331,7 +336,7 @@ mod tests {
         let processor = MarkdownProcessor::new();
         let markdown = "# Hello World\n\nThis is **bold** text.";
         let html = processor.render(markdown).unwrap();
-        
+
         assert!(html.contains("<h1>"));
         assert!(html.contains("<strong>"));
     }
@@ -341,7 +346,7 @@ mod tests {
         let processor = MarkdownProcessor::new();
         let markdown = "# Title\n\nThis is a long paragraph that should be truncated at some point to create a proper excerpt.";
         let excerpt = processor.extract_excerpt(markdown, 50);
-        
+
         assert!(excerpt.len() <= 53); // 50 + "..."
         assert!(excerpt.ends_with("..."));
     }
@@ -351,7 +356,7 @@ mod tests {
         let processor = MarkdownProcessor::new();
         let markdown = &"word ".repeat(200); // 200 words
         let time = processor.estimate_reading_time(markdown);
-        
+
         assert_eq!(time, 1); // Should be 1 minute
     }
 
@@ -360,7 +365,7 @@ mod tests {
         let processor = MarkdownProcessor::new();
         let markdown = "# Title\n\nThis is **bold** and *italic* text with [link](url).";
         let plain = processor.strip_markdown(markdown);
-        
+
         assert_eq!(plain, "Title This is bold and italic text with link.");
     }
 }

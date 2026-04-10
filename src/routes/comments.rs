@@ -2,9 +2,8 @@ use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
     response::Json,
-    routing::{get, post, put, delete},
-    Extension,
-    Router,
+    routing::{delete, get, post, put},
+    Extension, Router,
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -92,9 +91,13 @@ pub async fn get_comment(
     let comment_service = &app_state.comment_service;
     let auth_service = &app_state.auth_service;
     let comment = comment_service.get_comment(&comment_id).await?;
-    
+
     auth_service
-        .check_permission(&user_id, "docs.comment.read", Some(&comment.document_id.to_string()))
+        .check_permission(
+            &user_id,
+            "docs.comment.read",
+            Some(&comment.document_id.to_string()),
+        )
         .await?;
 
     Ok(Json(comment))
@@ -109,10 +112,14 @@ pub async fn update_comment(
     let comment_service = &app_state.comment_service;
     let auth_service = &app_state.auth_service;
     let comment = comment_service.get_comment(&comment_id).await?;
-    
+
     if comment.author_id != user_id {
         auth_service
-            .check_permission(&user_id, "docs.comment.update", Some(&comment.document_id.to_string()))
+            .check_permission(
+                &user_id,
+                "docs.comment.update",
+                Some(&comment.document_id.to_string()),
+            )
             .await?;
     }
 
@@ -131,14 +138,20 @@ pub async fn delete_comment(
     let comment_service = &app_state.comment_service;
     let auth_service = &app_state.auth_service;
     let comment = comment_service.get_comment(&comment_id).await?;
-    
+
     if comment.author_id != user_id {
         auth_service
-            .check_permission(&user_id, "docs.comment.delete", Some(&comment.document_id.to_string()))
+            .check_permission(
+                &user_id,
+                "docs.comment.delete",
+                Some(&comment.document_id.to_string()),
+            )
             .await?;
     }
 
-    comment_service.delete_comment(&comment_id, &user_id).await?;
+    comment_service
+        .delete_comment(&comment_id, &user_id)
+        .await?;
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -152,9 +165,13 @@ pub async fn get_comment_replies(
     let comment_service = &app_state.comment_service;
     let auth_service = &app_state.auth_service;
     let comment = comment_service.get_comment(&comment_id).await?;
-    
+
     auth_service
-        .check_permission(&user_id, "docs.comment.read", Some(&comment.document_id.to_string()))
+        .check_permission(
+            &user_id,
+            "docs.comment.read",
+            Some(&comment.document_id.to_string()),
+        )
         .await?;
 
     let page = query.page.unwrap_or(1);
@@ -187,9 +204,13 @@ pub async fn toggle_comment_like(
     let comment_service = &app_state.comment_service;
     let auth_service = &app_state.auth_service;
     let comment = comment_service.get_comment(&comment_id).await?;
-    
+
     auth_service
-        .check_permission(&user_id, "docs.comment.read", Some(&comment.document_id.to_string()))
+        .check_permission(
+            &user_id,
+            "docs.comment.read",
+            Some(&comment.document_id.to_string()),
+        )
         .await?;
 
     let updated_comment = comment_service
@@ -201,8 +222,14 @@ pub async fn toggle_comment_like(
 
 pub fn router() -> Router {
     Router::new()
-        .route("/document/:document_id", get(get_document_comments).post(create_comment))
-        .route("/:comment_id", get(get_comment).put(update_comment).delete(delete_comment))
+        .route(
+            "/document/:document_id",
+            get(get_document_comments).post(create_comment),
+        )
+        .route(
+            "/:comment_id",
+            get(get_comment).put(update_comment).delete(delete_comment),
+        )
         .route("/:comment_id/replies", get(get_comment_replies))
         .route("/:comment_id/like", post(toggle_comment_like))
 }

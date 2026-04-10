@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use validator::Validate;
 
@@ -22,7 +22,7 @@ pub struct Comment {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CommentMetadata {
-    pub mentions: Vec<String>, // 提及的用户ID
+    pub mentions: Vec<String>,    // 提及的用户ID
     pub attachments: Vec<String>, // 附件URL
     pub custom_fields: HashMap<String, serde_json::Value>,
 }
@@ -39,18 +39,26 @@ impl Default for CommentMetadata {
 
 #[derive(Debug, Serialize, Deserialize, Validate)]
 pub struct CreateCommentRequest {
-    #[validate(length(min = 1, max = 2000, message = "Content must be between 1 and 2000 characters"))]
+    #[validate(length(
+        min = 1,
+        max = 2000,
+        message = "Content must be between 1 and 2000 characters"
+    ))]
     pub content: String,
-    
+
     pub parent_id: Option<String>, // 回复的评论ID
     pub metadata: Option<CommentMetadata>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Validate)]
 pub struct UpdateCommentRequest {
-    #[validate(length(min = 1, max = 2000, message = "Content must be between 1 and 2000 characters"))]
+    #[validate(length(
+        min = 1,
+        max = 2000,
+        message = "Content must be between 1 and 2000 characters"
+    ))]
     pub content: Option<String>,
-    
+
     pub is_resolved: Option<bool>,
     pub metadata: Option<CommentMetadata>,
 }
@@ -68,8 +76,8 @@ pub struct CommentResponse {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub replies: Option<Vec<CommentResponse>>, // 回复列表
-    pub can_edit: bool, // 当前用户是否可以编辑
-    pub can_delete: bool, // 当前用户是否可以删除
+    pub can_edit: bool,                        // 当前用户是否可以编辑
+    pub can_delete: bool,                      // 当前用户是否可以删除
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -96,7 +104,7 @@ pub struct CommentQuery {
     pub parent_id: Option<String>, // 只获取特定父评论的回复
     pub author_id: Option<String>,
     pub is_resolved: Option<bool>,
-    pub sort: Option<String>, // "created_at", "updated_at"
+    pub sort: Option<String>,  // "created_at", "updated_at"
     pub order: Option<String>, // "asc", "desc"
 }
 
@@ -198,8 +206,8 @@ impl From<Comment> for CommentResponse {
             metadata: comment.metadata,
             created_at: comment.created_at.unwrap_or_else(Utc::now),
             updated_at: comment.updated_at.unwrap_or_else(Utc::now),
-            replies: None, // 需要在服务层填充
-            can_edit: false, // 需要在服务层计算
+            replies: None,     // 需要在服务层填充
+            can_edit: false,   // 需要在服务层计算
             can_delete: false, // 需要在服务层计算
         }
     }

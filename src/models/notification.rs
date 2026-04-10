@@ -1,7 +1,7 @@
+use crate::services::database::record_id_to_string;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use surrealdb::types::RecordId as Thing;
-use crate::services::database::record_id_to_string;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
