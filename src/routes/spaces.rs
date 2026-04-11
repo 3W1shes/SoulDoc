@@ -53,10 +53,13 @@ async fn create_space(
     user: User,
     Json(request): Json<CreateSpaceRequest>,
 ) -> Result<Json<Value>> {
-    // 检查用户是否有创建空间的权限
-    if !user.permissions.contains(&"spaces.write".to_string())
-        && !user.permissions.contains(&"docs.admin".to_string())
-    {
+    // Use the shared auth service so space creation follows the same
+    // permission model as the rest of the docs API.
+    let can_create_space = app_state
+        .auth_service
+        .check_permission(&user.id, "spaces.write", None)
+        .await?;
+    if !can_create_space {
         return Err(AppError::Authorization(
             "Permission denied: spaces.write required".to_string(),
         ));
